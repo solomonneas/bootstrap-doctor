@@ -634,6 +634,122 @@ def test_keep_with_unknown_category_stays_empty(cfg: Config) -> None:
     assert v.hook == ""
 
 
+def test_move_with_newline_in_topic_treated_as_error(cfg: Config) -> None:
+    """Newlines in topic could inject content into card YAML frontmatter
+    or the markdown breadcrumb. Reject at the judge boundary."""
+    cand = make_candidate()
+    payload_body = json.dumps(
+        {
+            "decision": "move",
+            "topic": "legit topic\n## Injected H2",
+            "category": "tools",
+            "tags": ["a"],
+            "hook": "a hook",
+            "reasoning": "fine",
+        }
+    )
+
+    def fake_post(url: str, payload: dict[str, Any]) -> FakeResponse:
+        return FakeResponse(200, _chat_completion(payload_body))
+
+    verdicts, stats = judge_all([cand], cfg, http_post=fake_post)
+    assert verdicts[0].decision == "unsure"
+    assert verdicts[0].reasoning.startswith("judge_error:")
+    assert "control" in verdicts[0].reasoning.lower() or "newline" in verdicts[0].reasoning.lower()
+    assert stats.failures == 1
+    # Must not be cached.
+    cache_file = cfg.cache_dir / "verdicts.json"
+    if cache_file.exists():
+        data = json.loads(cache_file.read_text())
+        assert data.get("entries", {}) == {}
+
+
+def test_move_with_newline_in_hook_treated_as_error(cfg: Config) -> None:
+    cand = make_candidate()
+    payload_body = json.dumps(
+        {
+            "decision": "move",
+            "topic": "ok topic",
+            "category": "tools",
+            "tags": [],
+            "hook": "line1\n## Injected H2",
+            "reasoning": "fine",
+        }
+    )
+
+    def fake_post(url: str, payload: dict[str, Any]) -> FakeResponse:
+        return FakeResponse(200, _chat_completion(payload_body))
+
+    verdicts, stats = judge_all([cand], cfg, http_post=fake_post)
+    assert verdicts[0].decision == "unsure"
+    assert verdicts[0].reasoning.startswith("judge_error:")
+
+
+def test_move_with_leading_hash_in_topic_treated_as_error(cfg: Config) -> None:
+    """Topic starting with '#' could pose as a markdown heading after
+    injection into the breadcrumb line context."""
+    cand = make_candidate()
+    payload_body = json.dumps(
+        {
+            "decision": "move",
+            "topic": "# sneaky heading",
+            "category": "tools",
+            "tags": [],
+            "hook": "a hook",
+            "reasoning": "fine",
+        }
+    )
+
+    def fake_post(url: str, payload: dict[str, Any]) -> FakeResponse:
+        return FakeResponse(200, _chat_completion(payload_body))
+
+    verdicts, stats = judge_all([cand], cfg, http_post=fake_post)
+    assert verdicts[0].decision == "unsure"
+    assert verdicts[0].reasoning.startswith("judge_error:")
+
+
+def test_move_with_carriage_return_in_tag_treated_as_error(cfg: Config) -> None:
+    cand = make_candidate()
+    payload_body = json.dumps(
+        {
+            "decision": "move",
+            "topic": "ok",
+            "category": "tools",
+            "tags": ["clean", "bad\rtag"],
+            "hook": "hook",
+            "reasoning": "fine",
+        }
+    )
+
+    def fake_post(url: str, payload: dict[str, Any]) -> FakeResponse:
+        return FakeResponse(200, _chat_completion(payload_body))
+
+    verdicts, stats = judge_all([cand], cfg, http_post=fake_post)
+    assert verdicts[0].decision == "unsure"
+    assert verdicts[0].reasoning.startswith("judge_error:")
+
+
+def test_move_with_null_byte_in_topic_treated_as_error(cfg: Config) -> None:
+    cand = make_candidate()
+    payload_body = json.dumps(
+        {
+            "decision": "move",
+            "topic": "topic\x00with-null",
+            "category": "tools",
+            "tags": [],
+            "hook": "hook",
+            "reasoning": "fine",
+        }
+    )
+
+    def fake_post(url: str, payload: dict[str, Any]) -> FakeResponse:
+        return FakeResponse(200, _chat_completion(payload_body))
+
+    verdicts, _ = judge_all([cand], cfg, http_post=fake_post)
+    assert verdicts[0].decision == "unsure"
+    assert verdicts[0].reasoning.startswith("judge_error:")
+
+
 def test_move_with_missing_topic_treated_as_error(cfg: Config) -> None:
     cand = make_candidate()
 

@@ -594,6 +594,71 @@ def test_render_plan_summary_footer_counts(cfg: Config, workspace_dir: Path) -> 
 
 
 # ---------------------------------------------------------------------------
+# IMPORTANT 5: defense-in-depth sanitization of topic / hook in trim
+# ---------------------------------------------------------------------------
+
+
+def test_trim_sanitizes_embedded_newlines_in_hook(
+    cfg: Config, workspace_dir: Path
+) -> None:
+    """A directly-constructed Verdict (bypassing judge.py) with newlines
+    in the hook must still produce a single-line breadcrumb. Defense
+    in depth: even if a future caller forges a Verdict, trim cannot
+    emit a multi-line breadcrumb that smuggles new content into the
+    bootstrap file."""
+    bs = write_bootstrap(workspace_dir, "AGENTS.md", "## Old\nbody\n")
+    sec = make_section(bs, heading="Old", body="body")
+    v = make_verdict(
+        sec,
+        topic="Legit Topic",
+        hook="line1\n## Injected H2\nmore",
+    )
+    plan = build_plan([v], cfg, today_iso=TODAY)
+    assert len(plan) == 1 and not plan[0].skipped
+    breadcrumb = plan[0].breadcrumb_line
+    assert "\n" not in breadcrumb
+    assert "## Injected" not in breadcrumb
+
+
+def test_trim_sanitizes_embedded_newlines_in_topic(
+    cfg: Config, workspace_dir: Path
+) -> None:
+    bs = write_bootstrap(workspace_dir, "AGENTS.md", "## Old\nbody\n")
+    sec = make_section(bs, heading="Old", body="body")
+    v = make_verdict(
+        sec,
+        topic="real topic\n## Injected",
+        hook="hook",
+    )
+    plan = build_plan([v], cfg, today_iso=TODAY)
+    breadcrumb = plan[0].breadcrumb_line
+    assert "\n" not in breadcrumb
+    assert "## Injected" not in breadcrumb
+
+
+def test_trim_escapes_yaml_quotes_in_frontmatter(
+    cfg: Config, workspace_dir: Path
+) -> None:
+    """A topic or hook containing a double quote must not break the
+    rendered frontmatter when we eventually move to quoted-yaml values."""
+    bs = write_bootstrap(workspace_dir, "AGENTS.md", "## Old\nbody\n")
+    sec = make_section(bs, heading="Old", body="body")
+    v = make_verdict(
+        sec,
+        topic='topic with "quotes"',
+        hook='hook with "quotes"',
+    )
+    plan = build_plan([v], cfg, today_iso=TODAY)
+    body = plan[0].card_body
+    # Both the topic and hook should still be parseable - either by
+    # escaping or by not introducing structural breakage.
+    assert 'topic: ' in body
+    # The body must still end with a frontmatter delimiter and content.
+    assert body.startswith("---\n")
+    assert "\n---\n" in body
+
+
+# ---------------------------------------------------------------------------
 # IMPORTANT 4: heading boundary detection matches parsing.py
 # ---------------------------------------------------------------------------
 

@@ -73,6 +73,26 @@ MAX_TAGS = 5
 DEFAULT_REQUEST_TIMEOUT = 30
 DEFAULT_MAX_INPUT_CHARS = 200_000
 
+#: Characters that must not appear in LLM-supplied ``topic``, ``hook``,
+#: or any individual ``tag``. Newlines/CR/NUL can break out of a
+#: single-line breadcrumb or a YAML frontmatter scalar; a leading
+#: ``#`` could pose as a markdown heading once injected.
+_CONTROL_CHARS = ("\n", "\r", "\x00")
+
+
+def _reject_control_chars(value: str, label: str) -> None:
+    """Raise ``JudgeError`` if ``value`` contains forbidden characters."""
+    for ch in _CONTROL_CHARS:
+        if ch in value:
+            raise JudgeError(
+                f"{label} contains control characters ({ch!r})"
+            )
+    stripped = value.lstrip()
+    if stripped.startswith("#"):
+        raise JudgeError(
+            f"{label} must not start with '#' (would parse as markdown heading)"
+        )
+
 #: Verbatim system prompt; see module docstring for context.
 SYSTEM_PROMPT = (
     'You audit OpenClaw bootstrap files. Each bootstrap file is loaded into '
@@ -340,6 +360,11 @@ def _validate_and_build_verdict(
             raise JudgeError("move verdict missing non-empty topic")
         if not isinstance(hook_raw, str) or not hook_raw.strip():
             raise JudgeError("move verdict missing non-empty hook")
+        # Reject control chars and leading '#' so a hostile model can't
+        # smuggle markdown structure into the breadcrumb or YAML
+        # frontmatter. Surfaces as a judge_error verdict, not cached.
+        _reject_control_chars(topic_raw, "topic")
+        _reject_control_chars(hook_raw, "hook")
         category_raw = parsed.get("category", "")
         if not isinstance(category_raw, str):
             raise JudgeError("category is not a string")
@@ -351,6 +376,7 @@ def _validate_and_build_verdict(
         for t in tags_raw:
             if not isinstance(t, str):
                 raise JudgeError("tags entries must be strings")
+            _reject_control_chars(t, "tag")
             tags.append(t)
         tags = tags[:MAX_TAGS]
         return Verdict(

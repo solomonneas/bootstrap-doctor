@@ -124,6 +124,58 @@ def _today_iso() -> str:
     return dt.date.today().isoformat()
 
 
+def _flatten_to_single_line(s: str) -> str:
+    """Collapse any newline/CR/NUL into single spaces.
+
+    Defense in depth: the judge layer already rejects these, but a
+    Verdict constructed bypassing that path (tests, internal callers)
+    must still produce a single-line breadcrumb. Any line in the input
+    that begins with one or more ``#`` followed by whitespace
+    (i.e. an ATX-heading prefix) has those hashes stripped before the
+    lines are joined, so the collapsed string cannot resurrect a
+    heading-shaped fragment inside the breadcrumb.
+    """
+    if not s:
+        return s
+    normalized = s.replace("\r\n", "\n").replace("\r", "\n").replace("\x00", "")
+    cleaned_lines: list[str] = []
+    for line in normalized.split("\n"):
+        stripped = line.lstrip()
+        if stripped.startswith("#"):
+            # Drop the leading run of '#' characters and any whitespace
+            # that follows so the remainder is plain text.
+            i = 0
+            while i < len(stripped) and stripped[i] == "#":
+                i += 1
+            stripped = stripped[i:].lstrip()
+        cleaned_lines.append(stripped)
+    return " ".join(token for token in " ".join(cleaned_lines).split() if token)
+
+
+def _yaml_scalar(value: str) -> str:
+    """Format ``value`` so it survives YAML frontmatter unambiguously.
+
+    Strips control chars, then double-quotes the result if it contains
+    characters that would otherwise need escaping or could be misread
+    as a YAML structure (``"``, ``:`` followed by space, leading
+    ``#``/``-``/``[``/``{``). Internal quotes are escaped with ``\\``.
+    """
+    cleaned = _flatten_to_single_line(value)
+    needs_quote = False
+    if not cleaned:
+        needs_quote = True
+    elif cleaned[0] in "#-[]{}!&*?|>'\"@`,":
+        needs_quote = True
+    elif ": " in cleaned or cleaned.endswith(":"):
+        needs_quote = True
+    elif '"' in cleaned:
+        needs_quote = True
+    if not needs_quote:
+        return cleaned
+    escaped = cleaned.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
 def _render_card_body(verdict: Verdict, today_iso: str) -> str:
     """Compose the full card file content (frontmatter + body).
 
@@ -138,16 +190,19 @@ def _render_card_body(verdict: Verdict, today_iso: str) -> str:
     heading_path = " > ".join(section.heading_path) if section.heading_path else ""
 
     lines: list[str] = ["---"]
-    lines.append(f"topic: {verdict.topic}")
+    lines.append(f"topic: {_yaml_scalar(verdict.topic)}")
     if verdict.category:
-        lines.append(f"category: {verdict.category}")
+        lines.append(f"category: {_yaml_scalar(verdict.category)}")
     if verdict.tags:
-        lines.append(f"tags: [{', '.join(verdict.tags)}]")
+        # Inline-list form: each tag is its own scalar so a tag with
+        # special characters cannot break the whole list.
+        rendered_tags = ", ".join(_yaml_scalar(t) for t in verdict.tags)
+        lines.append(f"tags: [{rendered_tags}]")
     lines.append(f"created: {today_iso}")
     lines.append(f"updated: {today_iso}")
     lines.append("source: bootstrap-doctor")
     lines.append(f"source_file: {section.file.name}")
-    lines.append(f"source_heading: {heading_path}")
+    lines.append(f"source_heading: {_yaml_scalar(heading_path)}")
     lines.append("---")
     lines.append("")
     lines.append(section.body)
@@ -163,8 +218,15 @@ def _render_breadcrumb(verdict: Verdict, slug: str) -> str:
     Format: ``- See [<topic>](memory/cards/<slug>.md) - <hook>``. Note the
     regular-hyphen separator. No em dashes anywhere in user-facing output
     (see global writing conventions).
+
+    Topic and hook are flattened to single-line form as a last-ditch
+    sanitization: even if a forged Verdict slips past judge.py's
+    validation, the breadcrumb stays a single line and can't smuggle
+    new markdown structure into the bootstrap file.
     """
-    return f"- See [{verdict.topic}](memory/cards/{slug}.md) - {verdict.hook}"
+    safe_topic = _flatten_to_single_line(verdict.topic)
+    safe_hook = _flatten_to_single_line(verdict.hook)
+    return f"- See [{safe_topic}](memory/cards/{slug}.md) - {safe_hook}"
 
 
 def _derive_slug(verdict: Verdict) -> str | None:
