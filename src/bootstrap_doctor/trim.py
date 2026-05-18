@@ -75,7 +75,12 @@ class CardWriteError(Exception):
 
 @dataclass(frozen=True)
 class TrimAction:
-    """One planned move: write this card, replace that section body."""
+    """One planned move: write this card, replace that section body.
+
+    ``collision_policy`` is recorded so apply_plan can honor the SAME
+    rule the operator picked at build_plan time when a card appears on
+    disk between plan and apply (e.g., concurrent run, manual create).
+    """
 
     verdict: Verdict
     card_path: Path
@@ -85,6 +90,7 @@ class TrimAction:
     breadcrumb_line: str
     skipped: bool = False
     skip_reason: str = ""
+    collision_policy: str = "skip"
 
 
 @dataclass(frozen=True)
@@ -246,6 +252,7 @@ def build_plan(
                 breadcrumb_line="",
                 skipped=True,
                 skip_reason="multiple verdicts for same section",
+                collision_policy=existing_card_collision,
             )
             actions.append(placeholder)
             continue
@@ -263,6 +270,7 @@ def build_plan(
                     breadcrumb_line="",
                     skipped=True,
                     skip_reason="could not derive slug from topic or heading",
+                    collision_policy=existing_card_collision,
                 )
             )
             continue
@@ -278,6 +286,7 @@ def build_plan(
                     breadcrumb_line="",
                     skipped=True,
                     skip_reason=f"duplicate slug in plan: {slug}",
+                    collision_policy=existing_card_collision,
                 )
             )
             continue
@@ -297,6 +306,7 @@ def build_plan(
                     breadcrumb_line="",
                     skipped=True,
                     skip_reason=reason,
+                    collision_policy=existing_card_collision,
                 )
             )
             continue
@@ -315,6 +325,7 @@ def build_plan(
                 bootstrap_path=bootstrap_path,
                 original_section=section,
                 breadcrumb_line=breadcrumb,
+                collision_policy=existing_card_collision,
             )
         )
 
@@ -446,13 +457,16 @@ def apply_plan(
     cards_written: list[Path] = []
     runtime_skipped = 0
 
-    # Phase 1: freshness check + projected bootstrap text per file.
-    # We compute the new bootstrap content here so we know the action's
-    # section is still locatable BEFORE writing its card. Actions whose
-    # section vanished are runtime-skipped and their cards are not
-    # written either.
+    # Phase 1: freshness check + collision re-check + projected bootstrap
+    # text per file. We compute the new bootstrap content here so we
+    # know the action's section is still locatable BEFORE writing its
+    # card. We also re-check the collision policy: if a card with the
+    # target slug appeared between build_plan and apply_plan, honor the
+    # plan's collision_policy now (skip / overwrite / rename) instead
+    # of blindly clobbering. Each surviving action carries the final
+    # (resolved_card_path, breadcrumb_line) chosen here.
     projected: dict[Path, str] = {}
-    survivors: list[TrimAction] = []
+    survivors: list[tuple[TrimAction, Path, str]] = []
 
     for bootstrap_path, file_actions in by_file.items():
         if not bootstrap_path.exists():
@@ -474,7 +488,10 @@ def apply_plan(
         )
 
         new_text = current_text
-        file_survivors: list[TrimAction] = []
+        file_survivors: list[tuple[TrimAction, Path, str]] = []
+        # Track slugs already claimed by survivors in this run so
+        # rename collisions don't collide with each other.
+        claimed_in_run: set[Path] = set()
         for action in ordered:
             fresh = _find_section_in_fresh_parse(
                 fresh_sections, action.original_section
@@ -482,14 +499,27 @@ def apply_plan(
             if fresh is None:
                 runtime_skipped += 1
                 continue
+
+            # Collision re-check at apply time.
+            resolved = _resolve_collision_at_apply(
+                action, claimed_in_run
+            )
+            if resolved is None:
+                runtime_skipped += 1
+                continue
+            resolved_card_path, resolved_breadcrumb = resolved
+
             rebuilt = _replace_section_body(
-                new_text, fresh, action.breadcrumb_line
+                new_text, fresh, resolved_breadcrumb
             )
             if rebuilt is None:
                 runtime_skipped += 1
                 continue
             new_text = rebuilt
-            file_survivors.append(action)
+            claimed_in_run.add(resolved_card_path)
+            file_survivors.append(
+                (action, resolved_card_path, resolved_breadcrumb)
+            )
             # REVERSE start_line order means this edit does not shift
             # any earlier section's offsets, so fresh_sections stays
             # valid for the next iteration.
@@ -500,19 +530,38 @@ def apply_plan(
 
     # Phase 2: write every surviving card BEFORE any bootstrap is
     # touched. If any card write fails, no bootstrap rewrite runs.
-    for action in survivors:
+    for action, card_path, _breadcrumb in survivors:
         try:
-            atomic_write_text(action.card_path, action.card_body)
-        except OSError as exc:
+            if action.collision_policy == "overwrite":
+                atomic_write_text(card_path, action.card_body)
+            else:
+                # skip / rename paths land on a path that didn't exist at
+                # collision-resolve time, but a concurrent process could
+                # race us. Use an exclusive create to keep the guarantee.
+                _exclusive_write_text(card_path, action.card_body)
+        except FileExistsError as exc:
+            # A racer beat us to this path between collision-resolve and
+            # write. Treat as skip-at-apply-time for that action: we
+            # cannot safely point a breadcrumb at content we did not
+            # write. Abort to keep things consistent.
             raise CardWriteError(
-                f"card write failed at {action.card_path}: {exc} "
-                f"({len(cards_written)} card(s) written before failure; "
+                f"card path appeared between resolve and write: {card_path} "
+                f"({len(cards_written)} card(s) written before; "
                 "no bootstrap files modified)",
-                failed_card=action.card_path,
+                failed_card=card_path,
                 cards_written=tuple(cards_written),
                 cause=exc,
             ) from exc
-        cards_written.append(action.card_path)
+        except OSError as exc:
+            raise CardWriteError(
+                f"card write failed at {card_path}: {exc} "
+                f"({len(cards_written)} card(s) written before failure; "
+                "no bootstrap files modified)",
+                failed_card=card_path,
+                cards_written=tuple(cards_written),
+                cause=exc,
+            ) from exc
+        cards_written.append(card_path)
 
     # Phase 3: every card is on disk; now rewrite the bootstraps.
     for bootstrap_path, new_text in projected.items():
@@ -526,6 +575,65 @@ def apply_plan(
         files_changed=tuple(files_changed),
         cards_written=tuple(cards_written),
     )
+
+
+def _resolve_collision_at_apply(
+    action: TrimAction, claimed_in_run: set[Path]
+) -> tuple[Path, str] | None:
+    """Re-check the action's card target against disk and honor policy.
+
+    Returns ``(final_card_path, final_breadcrumb_line)`` or None if
+    ``skip`` policy fires.
+    """
+    policy = action.collision_policy or "skip"
+    base = action.card_path
+    if base not in claimed_in_run and not base.exists():
+        return base, action.breadcrumb_line
+
+    if policy == "overwrite":
+        return base, action.breadcrumb_line
+
+    if policy == "rename":
+        stem = base.stem
+        parent = base.parent
+        for i in range(2, _MAX_RENAME_ATTEMPTS + 2):
+            candidate = parent / f"{stem}-{i}.md"
+            if candidate in claimed_in_run or candidate.exists():
+                continue
+            # Re-derive the breadcrumb to point at the renamed slug.
+            new_breadcrumb = _render_breadcrumb(action.verdict, candidate.stem)
+            return candidate, new_breadcrumb
+        return None
+
+    # Default: skip.
+    return None
+
+
+def _exclusive_write_text(path: Path, content: str) -> None:
+    """Exclusive-create wrapper around :func:`atomic_write_text`.
+
+    Race-safely claims ``path`` via ``os.O_CREAT | os.O_EXCL`` first
+    (raising :class:`FileExistsError` if a concurrent writer beat us),
+    then delegates to ``atomic_write_text`` for the durable atomic
+    write. Keeps tests that monkeypatch ``atomic_write_text``
+    operative.
+    """
+    import os as _os
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # Atomic claim: raises FileExistsError if anything is at `path`.
+    fd = _os.open(str(path), _os.O_CREAT | _os.O_EXCL | _os.O_WRONLY, 0o644)
+    _os.close(fd)
+    try:
+        atomic_write_text(path, content)
+    except Exception:
+        # Best-effort cleanup so we don't leave a zero-byte stub on disk
+        # if the real write failed.
+        try:
+            _os.unlink(path)
+        except OSError:
+            pass
+        raise
 
 
 # --- render_plan ------------------------------------------------------------

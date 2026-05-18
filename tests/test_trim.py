@@ -648,6 +648,101 @@ def test_card_write_failure_does_not_touch_any_bootstrap(
     assert list(cfg.cards_dir.iterdir()) == []
 
 
+# ---------------------------------------------------------------------------
+# BLOCKER 2: collision policy re-checked at apply_plan time
+# ---------------------------------------------------------------------------
+
+
+def test_collision_skip_rechecked_at_apply_time(
+    cfg: Config, workspace_dir: Path
+) -> None:
+    """Card appears between build_plan and apply_plan -> apply skips it.
+
+    The original collision policy was 'skip', so apply must honor that
+    same policy at apply time (not blindly overwrite). Bootstrap stays
+    unmodified.
+    """
+    bs = write_bootstrap(
+        workspace_dir, "AGENTS.md", "## Old Setup\nsome body content\n"
+    )
+    original_bs_text = bs.read_text()
+    sections = parse_file(bs)
+    sec = sections[0]
+    plan = build_plan(
+        [make_verdict(sec)], cfg, today_iso=TODAY, existing_card_collision="skip"
+    )
+    assert len(plan) == 1 and not plan[0].skipped
+    # Race: a card with the same slug appears AFTER the plan was built.
+    target = cfg.cards_dir / "old-setup-notes.md"
+    target.write_text("pre-existing content\n")
+
+    summary = apply_plan(plan, cfg, apply=True, force=True)
+    # Skip honored at apply time: no bootstrap rewrite, card preserved.
+    assert summary.actions_applied == 0
+    assert summary.skipped == 1
+    assert bs.read_text() == original_bs_text
+    assert target.read_text() == "pre-existing content\n"
+
+
+def test_collision_overwrite_rechecked_at_apply_time(
+    cfg: Config, workspace_dir: Path
+) -> None:
+    """With overwrite, the action proceeds even if the card appeared later."""
+    bs = write_bootstrap(
+        workspace_dir, "AGENTS.md", "## Old Setup\nsome body content\n"
+    )
+    sections = parse_file(bs)
+    sec = sections[0]
+    plan = build_plan(
+        [make_verdict(sec)],
+        cfg,
+        today_iso=TODAY,
+        existing_card_collision="overwrite",
+    )
+    # Race: card appears after the plan but policy says overwrite.
+    target = cfg.cards_dir / "old-setup-notes.md"
+    target.write_text("pre-existing content\n")
+
+    summary = apply_plan(plan, cfg, apply=True, force=True)
+    assert summary.actions_applied == 1
+    # Card was overwritten with the planned body.
+    assert "topic: Old Setup Notes" in target.read_text()
+
+
+def test_collision_rename_rechecked_at_apply_time(
+    cfg: Config, workspace_dir: Path
+) -> None:
+    """With rename, a collision discovered at apply time picks a fresh slug,
+    and the breadcrumb in the bootstrap points at the actual file written."""
+    bs = write_bootstrap(
+        workspace_dir, "AGENTS.md", "## Old Setup\nsome body content\n"
+    )
+    sections = parse_file(bs)
+    sec = sections[0]
+    plan = build_plan(
+        [make_verdict(sec)],
+        cfg,
+        today_iso=TODAY,
+        existing_card_collision="rename",
+    )
+    # Plan picked the unsuffixed slug because cards_dir was empty at plan time.
+    assert plan[0].card_path.name == "old-setup-notes.md"
+    # Race: the unsuffixed card materializes between plan and apply.
+    (cfg.cards_dir / "old-setup-notes.md").write_text("pre-existing\n")
+
+    summary = apply_plan(plan, cfg, apply=True, force=True)
+    assert summary.actions_applied == 1
+    # New card landed at -2.md, original preserved.
+    assert (cfg.cards_dir / "old-setup-notes-2.md").exists()
+    assert (
+        cfg.cards_dir / "old-setup-notes.md"
+    ).read_text() == "pre-existing\n"
+    # Breadcrumb in the bootstrap points at the renamed slug.
+    bs_after = bs.read_text()
+    assert "old-setup-notes-2.md" in bs_after
+    assert "[Old Setup Notes](memory/cards/old-setup-notes.md)" not in bs_after
+
+
 def test_card_write_failure_after_partial_success_leaves_completed_cards(
     cfg: Config,
     workspace_dir: Path,
