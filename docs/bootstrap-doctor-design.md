@@ -45,7 +45,7 @@ Both configurable. The 12k ceiling is empirical so we leave headroom.
    - Contains a code block > 10 lines
    - `git log -1 --format=%cs` shows no touch in > 60 days
    - Body appears verbatim (or > 80% similar) across multiple tracked files (cross-file duplicate detection)
-3. **LLM judge** (`judge.py`) - for each shortlisted section, POSTs to `localhost:18789` (OpenClaw gateway) with a structured prompt asking whether the section is **must-stay-loaded** (active rules, identity, currently-relevant state) or **reference-detail** (historical, exemplar, one-off setup). Returns one of `keep` / `move` / `unsure`. Token budget capped per run; verdicts cached by SHA256 of section body.
+3. **LLM judge** (`judge.py`) - for each shortlisted section, POSTs to an OpenAI-compatible chat-completions endpoint (default `localhost:11434`, Ollama; note the original spec aimed at the OpenClaw gateway on 18789 but that port serves the Control UI, not an OpenAI-compat API) with a structured prompt asking whether the section is **must-stay-loaded** (active rules, identity, currently-relevant state) or **reference-detail** (historical, exemplar, one-off setup). Returns one of `keep` / `move` / `unsure`. Token budget capped per run; verdicts cached by SHA256 of section body.
 4. **Trim plan** (`trim.py`) - for each `move` verdict:
    - Write card to `~/.openclaw/workspace/memory/cards/<slug>.md` with the existing frontmatter convention (`topic` / `category` / `tags` / `created` / `updated`). `created` is today (or git-blame first commit if available); `updated` is today.
    - Replace the original section with a one-line breadcrumb in the same H2/H3 location: `- See [<topic>](memory/cards/<slug>.md) - <one-line hook>`
@@ -67,8 +67,8 @@ Both configurable. The 12k ceiling is empirical so we leave headroom.
 ```toml
 workspace_dir = "~/.openclaw/workspace"
 cards_dir = "~/.openclaw/workspace/memory/cards"
-gateway_url = "http://localhost:18789"
-gateway_model = "openai-codex/gpt-5.5"
+gateway_url = "http://localhost:11434"
+gateway_model = "deepseek-v4-pro:cloud"
 soft_limit = 10000
 hard_limit = 11500
 tracked_files = ["AGENTS.md", "TOOLS.md", "SOUL.md", "USER.md",
@@ -93,7 +93,7 @@ bootstrap-doctor/
 │   ├── status.py         # size/limit reporting
 │   ├── parsing.py        # section splitter (heading-based)
 │   ├── heuristics.py     # shortlist rules (size, age, duplicates)
-│   ├── judge.py          # OpenClaw gateway client + verdict cache
+│   ├── judge.py          # LLM gateway client (OpenAI-compatible) + verdict cache
 │   ├── trim.py           # apply plan: write card, breadcrumb-in-place
 │   └── safety.py         # atomic writes, path validation, git-clean check
 └── tests/

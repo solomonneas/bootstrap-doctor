@@ -12,8 +12,8 @@ TOML schema:
 
     workspace_dir = "~/.openclaw/workspace"
     cards_dir = "~/.openclaw/workspace/memory/cards"
-    gateway_url = "http://localhost:18789"
-    gateway_model = "openai-codex/gpt-5.5"
+    gateway_url = "http://localhost:11434"
+    gateway_model = "deepseek-v4-pro:cloud"
     soft_limit = 10000
     hard_limit = 11500
     tracked_files = ["AGENTS.md", "TOOLS.md", "SOUL.md"]
@@ -65,8 +65,8 @@ from typing import Any
 
 DEFAULT_WORKSPACE_DIR = "~/.openclaw/workspace"
 DEFAULT_CARDS_DIR = "~/.openclaw/workspace/memory/cards"
-DEFAULT_GATEWAY_URL = "http://localhost:18789"
-DEFAULT_GATEWAY_MODEL = "openai-codex/gpt-5.5"
+DEFAULT_GATEWAY_URL = "http://localhost:11434"
+DEFAULT_GATEWAY_MODEL = "deepseek-v4-pro:cloud"
 DEFAULT_SOFT_LIMIT = 10000
 DEFAULT_HARD_LIMIT = 11500
 DEFAULT_TRACKED_FILES: list[str] = [

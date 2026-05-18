@@ -32,7 +32,7 @@ cd bootstrap-doctor
 pipx install -e .
 ```
 
-Requires Python 3.10+. Runtime dep: `requests` (used by the gateway client).
+Requires Python 3.11+. Runtime dep: `requests` (used by the gateway client).
 
 ## Usage
 
@@ -94,8 +94,8 @@ $ bootstrap-doctor trim --apply
 ```toml
 workspace_dir = "~/.openclaw/workspace"
 cards_dir = "~/.openclaw/workspace/memory/cards"
-gateway_url = "http://localhost:18789"
-gateway_model = "openai-codex/gpt-5.5"
+gateway_url = "http://localhost:11434"
+gateway_model = "deepseek-v4-pro:cloud"
 soft_limit = 10000
 hard_limit = 11500
 tracked_files = [
@@ -117,7 +117,7 @@ bootstrap-doctor runs a four-stage pipeline.
 
 1. **Section parser.** Splits each tracked `.md` by H2/H3 headings into `(file, heading_path, body, char_count, last_touched_git_mtime)` tuples.
 2. **Heuristic shortlist.** Flags sections that look offload-worthy: body > 400 chars, contains a code block > 10 lines, no git touch in 60+ days, or duplicated across multiple tracked files.
-3. **LLM judge.** For each shortlisted section, POSTs to the OpenClaw gateway at `localhost:18789` with a structured prompt asking whether the section is *must-stay-loaded* (active rules, identity, currently-relevant state) or *reference-detail* (historical, exemplar, one-off setup). Verdict is one of `keep`, `move`, or `unsure`. Token budget capped per run; verdicts cached by SHA256 of section body in `~/.cache/bootstrap-doctor/verdicts.json`.
+3. **LLM judge.** For each shortlisted section, POSTs to an OpenAI-compatible chat-completions endpoint (default `http://localhost:11434`, Ollama) with a structured prompt asking whether the section is *must-stay-loaded* (active rules, identity, currently-relevant state) or *reference-detail* (historical, exemplar, one-off setup). Verdict is one of `keep`, `move`, or `unsure`. Token budget capped per run; verdicts cached by SHA256 of section body in `~/.cache/bootstrap-doctor/verdicts.json`. Any OpenAI-compatible endpoint works (Ollama, OpenAI, vLLM, etc.); set `gateway_url` and `gateway_model` in config.
 4. **Trim plan.** For each `move` verdict, writes a card to `memory/cards/<slug>.md` with the existing frontmatter convention, replaces the section in the original with a one-line breadcrumb pointing at the card. `keep` is a no-op. `unsure` is reported but never auto-applied.
 
 ## Safety

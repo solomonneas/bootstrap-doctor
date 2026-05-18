@@ -64,8 +64,8 @@ def cards(workspace: Path) -> Path:
 def test_default_constants_match_spec():
     assert DEFAULT_WORKSPACE_DIR == "~/.openclaw/workspace"
     assert DEFAULT_CARDS_DIR == "~/.openclaw/workspace/memory/cards"
-    assert DEFAULT_GATEWAY_URL == "http://localhost:18789"
-    assert DEFAULT_GATEWAY_MODEL == "openai-codex/gpt-5.5"
+    assert DEFAULT_GATEWAY_URL == "http://localhost:11434"
+    assert DEFAULT_GATEWAY_MODEL == "deepseek-v4-pro:cloud"
     assert DEFAULT_SOFT_LIMIT == 10000
     assert DEFAULT_HARD_LIMIT == 11500
     assert DEFAULT_MIN_SECTION_CHARS == 400
