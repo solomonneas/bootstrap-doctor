@@ -599,6 +599,98 @@ def test_trim_apply_dirty_workspace_blocks(
     assert "bootstrap-doctor:" in captured.err
 
 
+def test_trim_aborts_when_audit_has_failures(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Even with one move verdict, a non-zero failures count blocks apply.
+
+    Gateway failures during the audit mean the verdict set is incomplete,
+    so mutating bootstrap files based on it could move the wrong content.
+    Exit 2 and do not touch disk.
+    """
+    workspace, cards = _mk_workspace(tmp_path)
+    body = "## Big Section\n\n" + ("x" * 500) + "\n"
+    bootstrap = workspace / "AGENTS.md"
+    bootstrap.write_text(body)
+    _git_init(workspace)
+    cfg_path = _write_config(tmp_path, workspace=workspace, cards=cards)
+    original_bs = bootstrap.read_text()
+
+    from bootstrap_doctor import judge as judge_mod
+
+    def fake_judge_all(
+        candidates: list, cfg: Config, **kwargs: Any
+    ) -> tuple[list[Verdict], JudgeStats]:
+        verdicts = [
+            Verdict(
+                section=candidates[0].section,
+                decision="move",
+                topic="big section",
+                category="session-log",
+                tags=(),
+                hook="moved.",
+                reasoning="historical",
+                source="gateway",
+                body_sha="x" * 64,
+            )
+        ]
+        return verdicts, JudgeStats(requests_made=1, failures=2)
+
+    monkeypatch.setattr(judge_mod, "judge_all", fake_judge_all)
+
+    code = cli_mod.main(["trim", "--config", str(cfg_path), "--apply"])
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "refusing to trim" in captured.err.lower()
+    assert "2" in captured.err  # mentions the failure count
+    # No bootstrap mutation.
+    assert bootstrap.read_text() == original_bs
+    assert not any(cards.iterdir())
+
+
+def test_trim_aborts_with_failures_even_under_force(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--force is for dirty-git, not for ignoring judge failures."""
+    workspace, cards = _mk_workspace(tmp_path)
+    body = "## Big Section\n\n" + ("x" * 500) + "\n"
+    bootstrap = workspace / "AGENTS.md"
+    bootstrap.write_text(body)
+    _git_init(workspace)
+    cfg_path = _write_config(tmp_path, workspace=workspace, cards=cards)
+
+    from bootstrap_doctor import judge as judge_mod
+
+    def fake_judge_all(
+        candidates: list, cfg: Config, **kwargs: Any
+    ) -> tuple[list[Verdict], JudgeStats]:
+        verdicts = [
+            Verdict(
+                section=candidates[0].section,
+                decision="move",
+                topic="big section",
+                category="session-log",
+                tags=(),
+                hook="moved.",
+                reasoning="historical",
+                source="gateway",
+                body_sha="x" * 64,
+            )
+        ]
+        return verdicts, JudgeStats(failures=1)
+
+    monkeypatch.setattr(judge_mod, "judge_all", fake_judge_all)
+
+    code = cli_mod.main(
+        ["trim", "--config", str(cfg_path), "--apply", "--force"]
+    )
+    assert code == 2
+
+
 def test_trim_no_actions_returns_zero(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

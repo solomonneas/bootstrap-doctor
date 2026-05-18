@@ -386,7 +386,17 @@ def run_trim(args: argparse.Namespace) -> int:
     result = _run_audit_pipeline(args, cfg)
     if isinstance(result, int):
         return result
-    _candidates, verdicts, _stats = result
+    _candidates, verdicts, stats = result
+
+    # Never mutate based on a partial audit. --force exists to bypass
+    # dirty-git, not to override gateway failures: if the operator
+    # really wants to retry, --no-cache is the right knob.
+    if stats.failures > 0:
+        _print_error(
+            f"refusing to trim with {stats.failures} gateway failure(s) "
+            "in audit; re-run audit with --no-cache or fix the gateway first."
+        )
+        return 2
 
     move_verdicts = [v for v in verdicts if v.decision == "move"]
     if not move_verdicts:
