@@ -825,6 +825,48 @@ def test_invalid_config_file_returns_two(
     assert "bootstrap-doctor:" in captured.err
 
 
+def test_unsafe_named_workspace_returns_two(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A named workspace that resolves outside the workspace base must
+    surface as exit 2 with a clear error, not be silently skipped.
+
+    A symlink under workspace_dir pointing OUTSIDE is the canonical
+    case (path traversal / misconfiguration). The user should know.
+    """
+    workspace, cards = _mk_workspace(tmp_path)
+    (workspace / "AGENTS.md").write_text("## A\nbody\n")
+    # Target lives outside the workspace; the symlink lives inside it.
+    outside = tmp_path / "outside-workspace"
+    outside.mkdir()
+    (workspace / "workspace-evil").symlink_to(outside)
+
+    cache = tmp_path / "cache"
+    cfg_path = tmp_path / "cfg.toml"
+    cfg_path.write_text(
+        f'''
+workspace_dir = "{workspace}"
+cards_dir = "{cards}"
+soft_limit = 100
+hard_limit = 200
+tracked_files = ["AGENTS.md"]
+named_workspaces = ["workspace-evil"]
+
+[cache]
+dir = "{cache}"
+'''
+    )
+
+    code = cli_mod.main(["audit", "--config", str(cfg_path)])
+    captured = capsys.readouterr()
+    assert code == 2
+    err = captured.err.lower()
+    assert "unsafe" in err or "outside" in err or "escape" in err
+    assert "workspace-evil" in captured.err
+
+
 def test_unexpected_exception_returns_three(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

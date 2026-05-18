@@ -209,9 +209,14 @@ def run_status(args: argparse.Namespace) -> int:
 def _collect_sections(cfg) -> list:
     """Walk every (workspace, tracked_file) pair and parse every file.
 
-    Returns one flat list of Section across all workspaces. Missing files
-    or unreadable bytes are skipped silently here; the status verb is the
-    place to surface that. Audit/trim just operate on what they can parse.
+    Returns one flat list of Section across all workspaces. Missing
+    files or unreadable bytes are skipped silently here; the status
+    verb is the place to surface those. An ``UnsafeTargetError`` on a
+    named workspace propagates so the top-level CLI can fail loudly:
+    silently skipping a symlink-traversal misconfiguration would let
+    the user mutate the wrong tree on the next trim. The exception
+    message is rewrapped to include the offending name so the user
+    knows which entry to remove.
     """
     from bootstrap_doctor.parsing import parse_file
     from bootstrap_doctor.safety import UnsafeTargetError, ensure_within
@@ -221,8 +226,10 @@ def _collect_sections(cfg) -> list:
     for name in cfg.named_workspaces:
         try:
             resolved = ensure_within(cfg.workspace_dir, cfg.workspace_dir / name)
-        except UnsafeTargetError:
-            continue
+        except UnsafeTargetError as exc:
+            raise UnsafeTargetError(
+                f"named workspace {name!r} resolves outside workspace_dir: {exc}"
+            ) from exc
         scopes.append((name, resolved))
 
     for _label, ws_dir in scopes:
@@ -450,6 +457,8 @@ def run_trim(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    from bootstrap_doctor.safety import UnsafeTargetError
+
     parser = build_parser()
     args = parser.parse_args(argv)
 
@@ -467,6 +476,9 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         _print_error("interrupted")
         return 130
+    except UnsafeTargetError as exc:
+        _print_error(f"unsafe named workspace: {exc}")
+        return 2
     except Exception as exc:
         if _trace_enabled():
             traceback.print_exc(file=sys.stderr)
