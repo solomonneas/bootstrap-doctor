@@ -65,9 +65,13 @@ def cfg(tmp_path: Path, workspace_dir: Path, cards_dir: Path) -> Config:
     """A fully-formed Config rooted at the tmp_path workspace.
 
     Uses an isolated cache_dir under tmp_path so tests never touch the
-    real ~/.cache/bootstrap-doctor.
+    real ~/.cache/bootstrap-doctor. Pre-creates the cache dir so tests
+    that seed the cache file by hand can do so directly; the dedicated
+    ``test_judge_creates_cache_dir_lazily_on_write`` test asserts the
+    lazy-create behavior of ``resolve_config`` itself.
     """
     cache_dir = tmp_path / "cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
     config_file = tmp_path / "config.toml"
     config_file.write_text(
         f'''
@@ -841,6 +845,42 @@ def test_empty_candidate_list(cfg: Config) -> None:
 # ---------------------------------------------------------------------------
 # Cache value sanity
 # ---------------------------------------------------------------------------
+
+
+def test_judge_creates_cache_dir_lazily_on_write(
+    workspace_dir: Path, cards_dir: Path, tmp_path: Path
+) -> None:
+    """Cache dir is only created when judge_all needs to write to it.
+
+    Resolving a Config alone must not touch ~/.cache.
+    """
+    cache_dir = tmp_path / "lazy-cache"
+    assert not cache_dir.exists()
+    cfg_file = tmp_path / "cfg.toml"
+    cfg_file.write_text(
+        f'''
+workspace_dir = "{workspace_dir}"
+cards_dir = "{cards_dir}"
+gateway_url = "http://localhost:18789"
+gateway_model = "test-model"
+
+[cache]
+dir = "{cache_dir}"
+'''
+    )
+    cfg = resolve_config(config_file=str(cfg_file))
+    # Config resolution must NOT have created the dir.
+    assert not cache_dir.exists()
+    assert cfg.cache_dir == cache_dir.resolve()
+
+    cand = make_candidate()
+
+    def fake_post(url: str, payload: dict[str, Any]) -> FakeResponse:
+        return FakeResponse(200, _ok_move())
+
+    judge_all([cand], cfg, http_post=fake_post)
+    # Now the cache file (and its parent) should exist.
+    assert (cache_dir / "verdicts.json").exists()
 
 
 def test_corrupt_cache_entry_invalid_decision_falls_back_to_gateway(

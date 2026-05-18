@@ -762,6 +762,37 @@ def test_status_e2e_all_ok_returns_zero(
     assert code == 0
 
 
+def test_status_does_not_create_cache_dir(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The read-only status verb must not create ~/.cache/bootstrap-doctor
+    (or any cache dir) as a side effect.
+
+    Lazy creation lives in judge.py and only fires on cache writes.
+    """
+    workspace, cards = _mk_workspace(tmp_path)
+    (workspace / "AGENTS.md").write_text("x" * 10)
+    # Point HOME at tmp_path so the default cache path is hermetic.
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("BOOTSTRAP_DOCTOR_CONFIG", raising=False)
+    cfg_path = _write_config(tmp_path, workspace=workspace, cards=cards)
+
+    # Point the cache to a not-yet-existing path AND run status (which
+    # is read-only). Cache dir must not exist afterwards regardless of
+    # whether status returned 0 or 1.
+    expected_cache = tmp_path / "would-be-cache"
+    cfg_path.write_text(
+        cfg_path.read_text().replace(
+            f'dir = "{tmp_path / "cache"}"',
+            f'dir = "{expected_cache}"',
+        )
+    )
+    assert not expected_cache.exists()
+    cli_mod.main(["status", "--config", str(cfg_path)])
+    assert not expected_cache.exists()
+
+
 # ---------------------------------------------------------------------------
 # Error paths
 # ---------------------------------------------------------------------------

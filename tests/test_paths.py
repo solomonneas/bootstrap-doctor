@@ -140,7 +140,8 @@ dir = "{tmp_path / "custom-cache"}"
     assert cfg.min_section_chars == 200
     assert cfg.stale_days == 30
     assert cfg.cache_dir == (tmp_path / "custom-cache").resolve()
-    assert cfg.cache_dir.exists()  # auto-created
+    # Cache dir is not auto-created at config-resolution time; lazy.
+    assert not cfg.cache_dir.exists()
 
 
 def test_config_file_via_env_var(
@@ -619,12 +620,17 @@ named_workspaces = [""]
 # cache_dir auto-create ---------------------------------------------------
 
 
-def test_cache_dir_auto_created(
+def test_cache_dir_not_created_at_config_resolution(
     workspace: Path,
     cards: Path,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """resolve_config records the cache path but does NOT create the dir.
+
+    Creation is lazy and lives in judge.py at cache-write time so the
+    read-only ``status`` verb never has a filesystem side effect.
+    """
     _clear_env(monkeypatch)
     cache = tmp_path / "fresh-cache"
     assert not cache.exists()
@@ -640,9 +646,36 @@ dir = "{cache}"
 """,
     )
     cfg = resolve_config(config_file=str(cfg_path))
-    assert cfg.cache_dir.exists()
-    assert cfg.cache_dir.is_dir()
     assert isinstance(cfg.cache_dir, Path)
+    # Path is resolved but the directory itself was not created.
+    assert not cache.exists()
+    # Parent dir is required to exist so a future cache write can succeed.
+    assert cache.parent.exists()
+
+
+def test_cache_dir_existing_non_dir_raises(
+    workspace: Path,
+    cards: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If cache_dir exists but is a regular file, fail loudly."""
+    _clear_env(monkeypatch)
+    cache_file = tmp_path / "not-a-dir"
+    cache_file.write_text("oops")
+    cfg_path = tmp_path / "cfg.toml"
+    _write_toml(
+        cfg_path,
+        f"""
+workspace_dir = "{workspace}"
+cards_dir = "{cards}"
+
+[cache]
+dir = "{cache_file}"
+""",
+    )
+    with pytest.raises(ConfigError):
+        resolve_config(config_file=str(cfg_path))
 
 
 def test_cache_dir_default_when_not_set(
@@ -659,7 +692,8 @@ def test_cache_dir_default_when_not_set(
         cards_dir=str(cards),
     )
     assert cfg.cache_dir == (tmp_path / ".cache" / "bootstrap-doctor").resolve()
-    assert cfg.cache_dir.exists()
+    # Lazy: not created at config resolution time.
+    assert not cfg.cache_dir.exists()
 
 
 # Missing config file -----------------------------------------------------

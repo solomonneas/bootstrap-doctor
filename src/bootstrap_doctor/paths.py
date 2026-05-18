@@ -354,12 +354,22 @@ def _validate_positive(value: Any, label: str) -> int:
     return n
 
 
-def _ensure_cache_dir(raw: Any) -> Path:
+def _validate_cache_dir(raw: Any) -> Path:
+    """Resolve ``cache_dir`` without creating it.
+
+    Does NOT create the directory: read-only verbs like ``status``
+    must not have filesystem side effects. Lazy creation lives in
+    :mod:`bootstrap_doctor.judge` at cache-write time (the underlying
+    ``atomic_write_text`` does ``mkdir(parents=True, exist_ok=True)``
+    on the parent right before each write).
+
+    The only structural check here is: if the path already exists,
+    it must be a directory.
+    """
     if not isinstance(raw, str) or not raw:
         raise ConfigError(f"cache_dir must be a non-empty string, got {raw!r}")
     path = _expand(raw)
-    path.mkdir(parents=True, exist_ok=True)
-    if not path.is_dir():
+    if path.exists() and not path.is_dir():
         raise ConfigError(f"cache_dir is not a directory: {path}")
     return path
 
@@ -411,7 +421,7 @@ def resolve_config(
     named = _validate_named_workspaces(merged["named_workspaces"])
     min_chars = _validate_positive(merged["min_section_chars"], "min_section_chars")
     stale = _validate_positive(merged["stale_days"], "stale_days")
-    cache = _ensure_cache_dir(merged["cache_dir"])
+    cache = _validate_cache_dir(merged["cache_dir"])
 
     return Config(
         workspace_dir=ws,
