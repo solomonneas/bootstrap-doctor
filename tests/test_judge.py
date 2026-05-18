@@ -843,6 +843,110 @@ def test_empty_candidate_list(cfg: Config) -> None:
 # ---------------------------------------------------------------------------
 
 
+def test_corrupt_cache_entry_invalid_decision_falls_back_to_gateway(
+    cfg: Config, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A cache entry whose decision is outside VALID_DECISIONS must
+    be treated as a miss, not blindly returned as a Verdict."""
+    cache_file = cfg.cache_dir / "verdicts.json"
+    cand = make_candidate()
+    body_sha = hashlib.sha256(cand.section.body.encode("utf-8")).hexdigest()
+    cache_file.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "entries": {
+                    body_sha: {
+                        "decision": "destroy",  # not in VALID_DECISIONS
+                        "topic": "stale",
+                        "category": "deprecated",
+                        "tags": [],
+                        "hook": "stale",
+                        "reasoning": "n/a",
+                        "cached_at": 1,
+                    }
+                },
+            }
+        )
+    )
+    calls = {"n": 0}
+
+    def fake_post(url: str, payload: dict[str, Any]) -> FakeResponse:
+        calls["n"] += 1
+        return FakeResponse(200, _ok_keep())
+
+    verdicts, stats = judge_all([cand], cfg, http_post=fake_post)
+    # Gateway was re-asked because the cached entry was invalid.
+    assert calls["n"] == 1
+    assert verdicts[0].decision == "keep"
+    assert verdicts[0].source == "gateway"
+    err = capsys.readouterr().err.lower()
+    assert "cache" in err and ("invalid" in err or "warn" in err)
+
+
+def test_corrupt_cache_entry_non_dict_falls_back_to_gateway(
+    cfg: Config, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A non-dict cache entry (e.g., null) must not crash judge_all."""
+    cache_file = cfg.cache_dir / "verdicts.json"
+    cand = make_candidate()
+    body_sha = hashlib.sha256(cand.section.body.encode("utf-8")).hexdigest()
+    cache_file.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "entries": {
+                    body_sha: None,
+                },
+            }
+        )
+    )
+
+    def fake_post(url: str, payload: dict[str, Any]) -> FakeResponse:
+        return FakeResponse(200, _ok_keep())
+
+    verdicts, _ = judge_all([cand], cfg, http_post=fake_post)
+    assert verdicts[0].decision == "keep"
+    assert verdicts[0].source == "gateway"
+
+
+def test_corrupt_cache_entry_move_missing_topic_falls_back(
+    cfg: Config, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A 'move' cache entry with empty topic must be re-judged, not
+    returned as a malformed move verdict (which would crash trim)."""
+    cache_file = cfg.cache_dir / "verdicts.json"
+    cand = make_candidate()
+    body_sha = hashlib.sha256(cand.section.body.encode("utf-8")).hexdigest()
+    cache_file.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "entries": {
+                    body_sha: {
+                        "decision": "move",
+                        "topic": "",  # invalid: move requires non-empty topic
+                        "category": "tools",
+                        "tags": [],
+                        "hook": "h",
+                        "reasoning": "stale",
+                        "cached_at": 1,
+                    }
+                },
+            }
+        )
+    )
+    calls = {"n": 0}
+
+    def fake_post(url: str, payload: dict[str, Any]) -> FakeResponse:
+        calls["n"] += 1
+        return FakeResponse(200, _ok_keep())
+
+    verdicts, _ = judge_all([cand], cfg, http_post=fake_post)
+    assert calls["n"] == 1
+    assert verdicts[0].source == "gateway"
+
+
 def test_cached_at_is_recent_unix_ts(cfg: Config) -> None:
     cand = make_candidate()
 

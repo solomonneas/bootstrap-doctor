@@ -213,17 +213,42 @@ def _save_cache(path: Path, entries: dict[str, dict[str, Any]]) -> None:
 
 
 def _verdict_from_cache_entry(
-    section: Section, body_sha: str, entry: dict[str, Any]
+    section: Section, body_sha: str, entry: Any
 ) -> Verdict:
-    """Build a Verdict from a cached entry dict, with defensive defaults."""
+    """Build a Verdict from a cached entry dict after re-validating it.
+
+    Runs the same structural checks as a fresh gateway verdict so a
+    cache file edited by hand (or written by a prior buggy version)
+    cannot smuggle an invalid Verdict back into the pipeline.
+
+    Raises :class:`JudgeError` on any structural problem; the caller
+    treats that as a cache miss.
+    """
+    if not isinstance(entry, dict):
+        raise JudgeError(
+            f"cache entry is not a JSON object: {type(entry).__name__}"
+        )
+    # Reuse the shared validator. Build a parsed-shaped dict from the
+    # entry's stored fields and validate it the same way we would a
+    # gateway response.
+    parsed = {
+        "decision": entry.get("decision"),
+        "topic": entry.get("topic", ""),
+        "category": entry.get("category", ""),
+        "tags": entry.get("tags", []) or [],
+        "hook": entry.get("hook", ""),
+        "reasoning": entry.get("reasoning", ""),
+    }
+    verdict = _validate_and_build_verdict(section, body_sha, parsed)
+    # Source is "cache", not the "gateway" default from the validator.
     return Verdict(
-        section=section,
-        decision=str(entry.get("decision", "unsure")),
-        topic=str(entry.get("topic", "")),
-        category=str(entry.get("category", "")),
-        tags=tuple(str(t) for t in entry.get("tags", []) or []),
-        hook=str(entry.get("hook", "")),
-        reasoning=str(entry.get("reasoning", "")),
+        section=verdict.section,
+        decision=verdict.decision,
+        topic=verdict.topic,
+        category=verdict.category,
+        tags=verdict.tags,
+        hook=verdict.hook,
+        reasoning=verdict.reasoning,
         source="cache",
         body_sha=body_sha,
     )
@@ -561,14 +586,26 @@ def judge_all(
             verdicts.append(_budget_verdict(section, body_sha))
             continue
 
-        # Cache hit short-circuit (only when use_cache is True).
+        # Cache hit short-circuit (only when use_cache is True). Re-
+        # validate the entry on read: a cache file edited by hand or
+        # written by a prior buggy version must not be trusted blindly.
         if use_cache and body_sha in cache_entries:
-            verdict = _verdict_from_cache_entry(
-                section, body_sha, cache_entries[body_sha]
-            )
-            verdicts.append(verdict)
-            stats.cache_hits += 1
-            continue
+            try:
+                verdict = _verdict_from_cache_entry(
+                    section, body_sha, cache_entries[body_sha]
+                )
+            except JudgeError as exc:
+                print(
+                    f"warning: ignoring invalid cache entry for {body_sha[:8]}...: {exc}",
+                    file=sys.stderr,
+                )
+                # Drop it so we don't re-warn or re-validate this run.
+                cache_entries.pop(body_sha, None)
+                # Fall through to the gateway path below.
+            else:
+                verdicts.append(verdict)
+                stats.cache_hits += 1
+                continue
 
         # Budget pre-check: rough char count for this candidate. Strategy
         # is "simple bail": if this one would push us over, mark it and
