@@ -11,7 +11,10 @@ from bootstrap_doctor.judge import Verdict
 from bootstrap_doctor.parsing import Section, parse_file
 from bootstrap_doctor.paths import Config, resolve_config
 from bootstrap_doctor.safety import DirtyWorkspaceError
+from bootstrap_doctor import safety as safety_mod
+from bootstrap_doctor import trim as trim_mod
 from bootstrap_doctor.trim import (
+    CardWriteError,
     TrimAction,
     TrimSummary,
     apply_plan,
@@ -588,3 +591,111 @@ def test_render_plan_summary_footer_counts(cfg: Config, workspace_dir: Path) -> 
     out = render_plan(plan, cfg)
     # Footer mentions both cards.
     assert "2" in out  # two cards, two files
+
+
+# ---------------------------------------------------------------------------
+# BLOCKER 1: cards write before bootstrap rewrites
+# ---------------------------------------------------------------------------
+
+
+def test_card_write_failure_does_not_touch_any_bootstrap(
+    cfg: Config,
+    workspace_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If a card write fails, no bootstrap file may be rewritten.
+
+    Set up two actions across one file. Patch atomic_write_text so the
+    FIRST card write raises OSError. The bootstrap file must remain
+    untouched, and the partial summary must reflect what actually
+    completed (zero cards, zero files changed).
+    """
+    text = (
+        "## First\n"
+        "first body line\n"
+        "\n"
+        "## Second\n"
+        "second body line\n"
+    )
+    bs = write_bootstrap(workspace_dir, "AGENTS.md", text)
+    original = bs.read_text()
+    sections = parse_file(bs)
+    secs = {s.heading_text: s for s in sections}
+    v1 = make_verdict(
+        secs["First"], topic="First Topic", hook="h1", tags=(), category=""
+    )
+    v2 = make_verdict(
+        secs["Second"], topic="Second Topic", hook="h2", tags=(), category=""
+    )
+    plan = build_plan([v1, v2], cfg, today_iso=TODAY)
+
+    real_write = trim_mod.atomic_write_text
+
+    def fail_on_card(target: Path, content: str) -> None:
+        # Card writes go to cfg.cards_dir; bootstrap writes go elsewhere.
+        if target.parent == cfg.cards_dir:
+            raise OSError("disk full (simulated)")
+        real_write(target, content)
+
+    monkeypatch.setattr(trim_mod, "atomic_write_text", fail_on_card)
+
+    with pytest.raises(CardWriteError):
+        apply_plan(plan, cfg, apply=True, force=True)
+
+    # Bootstrap is untouched.
+    assert bs.read_text() == original
+    # No card files on disk.
+    assert list(cfg.cards_dir.iterdir()) == []
+
+
+def test_card_write_failure_after_partial_success_leaves_completed_cards(
+    cfg: Config,
+    workspace_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If the SECOND card write fails, the first card stays on disk but no
+    bootstrap may be modified, and the error must clearly identify the
+    partial state.
+    """
+    text = (
+        "## First\n"
+        "first body line\n"
+        "\n"
+        "## Second\n"
+        "second body line\n"
+    )
+    bs = write_bootstrap(workspace_dir, "AGENTS.md", text)
+    original = bs.read_text()
+    sections = parse_file(bs)
+    secs = {s.heading_text: s for s in sections}
+    v1 = make_verdict(
+        secs["First"], topic="First Topic", hook="h1", tags=(), category=""
+    )
+    v2 = make_verdict(
+        secs["Second"], topic="Second Topic", hook="h2", tags=(), category=""
+    )
+    plan = build_plan([v1, v2], cfg, today_iso=TODAY)
+
+    real_write = trim_mod.atomic_write_text
+    state = {"card_writes": 0}
+
+    def fail_on_second_card(target: Path, content: str) -> None:
+        if target.parent == cfg.cards_dir:
+            state["card_writes"] += 1
+            if state["card_writes"] == 2:
+                raise OSError("disk full on second card (simulated)")
+        real_write(target, content)
+
+    monkeypatch.setattr(trim_mod, "atomic_write_text", fail_on_second_card)
+
+    with pytest.raises(CardWriteError) as exc_info:
+        apply_plan(plan, cfg, apply=True, force=True)
+
+    # The error names which card failed and how many succeeded before.
+    err = str(exc_info.value)
+    assert "card" in err.lower()
+    # Bootstrap is untouched.
+    assert bs.read_text() == original
+    # One card present, one missing.
+    written_cards = sorted(p.name for p in cfg.cards_dir.iterdir())
+    assert len(written_cards) == 1

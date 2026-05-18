@@ -48,7 +48,29 @@ from .safety import (
 _MAX_RENAME_ATTEMPTS = 10
 
 
-# --- Public dataclasses -----------------------------------------------------
+# --- Public dataclasses + exceptions ---------------------------------------
+
+
+class CardWriteError(Exception):
+    """A card write failed during apply_plan after partial progress.
+
+    Apply aborts before touching any bootstrap file. ``cards_written``
+    lists the cards that landed on disk before the failure so the
+    operator can clean up or rerun.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        failed_card: Path,
+        cards_written: tuple[Path, ...],
+        cause: Exception | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.failed_card = failed_card
+        self.cards_written = cards_written
+        self.__cause__ = cause
 
 
 @dataclass(frozen=True)
@@ -388,8 +410,13 @@ def apply_plan(
 
     Dry-run mode (default) returns a summary with ``actions_applied=0``
     and never touches disk. Apply mode runs a git-clean preflight
-    (skippable via ``force=True``), then for each non-skipped action
-    writes the card and rewrites the source bootstrap file.
+    (skippable via ``force=True``), writes every card, and only then
+    rewrites the source bootstrap files.
+
+    Write order is cards FIRST, bootstraps SECOND. If a card write
+    fails partway through, no bootstrap is touched and a
+    :class:`CardWriteError` propagates with the list of cards that did
+    land on disk so the operator can clean up or rerun.
 
     Bootstrap rewrites are grouped per file and processed in REVERSE
     ``start_line`` order so that earlier line offsets don't shift while
@@ -417,17 +444,18 @@ def apply_plan(
 
     files_changed: list[Path] = []
     cards_written: list[Path] = []
-    applied = 0
     runtime_skipped = 0
 
-    # Track which actions survived the freshness check, by id() of the
-    # original TrimAction object; we use this to decide whether to write
-    # the card or not after the bootstrap rewrite.
-    survived: dict[int, Path] = {}
+    # Phase 1: freshness check + projected bootstrap text per file.
+    # We compute the new bootstrap content here so we know the action's
+    # section is still locatable BEFORE writing its card. Actions whose
+    # section vanished are runtime-skipped and their cards are not
+    # written either.
+    projected: dict[Path, str] = {}
+    survivors: list[TrimAction] = []
 
     for bootstrap_path, file_actions in by_file.items():
         if not bootstrap_path.exists():
-            # Whole file vanished; skip every action targeting it.
             runtime_skipped += len(file_actions)
             continue
 
@@ -446,7 +474,7 @@ def apply_plan(
         )
 
         new_text = current_text
-        any_change = False
+        file_survivors: list[TrimAction] = []
         for action in ordered:
             fresh = _find_section_in_fresh_parse(
                 fresh_sections, action.original_section
@@ -461,29 +489,39 @@ def apply_plan(
                 runtime_skipped += 1
                 continue
             new_text = rebuilt
-            survived[id(action)] = action.card_path
-            any_change = True
-            # We process in REVERSE start_line order, so editing this
-            # section does not shift the line offsets of any earlier
-            # section. `fresh_sections` stays valid for the next loop
-            # iteration; no re-parse needed.
+            file_survivors.append(action)
+            # REVERSE start_line order means this edit does not shift
+            # any earlier section's offsets, so fresh_sections stays
+            # valid for the next iteration.
 
-        if any_change:
-            atomic_write_text(bootstrap_path, new_text)
-            files_changed.append(bootstrap_path)
+        if file_survivors and new_text != current_text:
+            projected[bootstrap_path] = new_text
+            survivors.extend(file_survivors)
 
-    # Now write the cards for actions that survived the freshness check.
-    for action in live:
-        target = survived.get(id(action))
-        if target is None:
-            continue
-        atomic_write_text(target, action.card_body)
-        cards_written.append(target)
-        applied += 1
+    # Phase 2: write every surviving card BEFORE any bootstrap is
+    # touched. If any card write fails, no bootstrap rewrite runs.
+    for action in survivors:
+        try:
+            atomic_write_text(action.card_path, action.card_body)
+        except OSError as exc:
+            raise CardWriteError(
+                f"card write failed at {action.card_path}: {exc} "
+                f"({len(cards_written)} card(s) written before failure; "
+                "no bootstrap files modified)",
+                failed_card=action.card_path,
+                cards_written=tuple(cards_written),
+                cause=exc,
+            ) from exc
+        cards_written.append(action.card_path)
+
+    # Phase 3: every card is on disk; now rewrite the bootstraps.
+    for bootstrap_path, new_text in projected.items():
+        atomic_write_text(bootstrap_path, new_text)
+        files_changed.append(bootstrap_path)
 
     return TrimSummary(
         actions_planned=planned,
-        actions_applied=applied,
+        actions_applied=len(survivors),
         skipped=pre_skipped + runtime_skipped,
         files_changed=tuple(files_changed),
         cards_written=tuple(cards_written),
