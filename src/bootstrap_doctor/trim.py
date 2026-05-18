@@ -33,7 +33,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .judge import Verdict
-from .parsing import Section, parse_file
+from .parsing import H2_RE, H3_RE, H4_PLUS_RE, Section, parse_file
 from .paths import Config
 from .safety import (
     UnsafeTargetError,
@@ -42,6 +42,19 @@ from .safety import (
     resolve_card_target,
     slugify,
 )
+
+
+def _is_h2_or_h3_heading(line: str) -> bool:
+    """True iff ``line`` is an H2 or H3 by the same rules ``parsing.py`` uses.
+
+    Centralizes the boundary test so trim and parse agree on what counts
+    as a section break (e.g., ``##\\tFoo`` is an H2; ``#### Foo`` is not).
+    """
+    if H2_RE.match(line):
+        return True
+    if H3_RE.match(line) and not H4_PLUS_RE.match(line):
+        return True
+    return False
 
 
 # How many ``-N`` suffixes we'll try before giving up on a renamed card.
@@ -383,8 +396,9 @@ def _replace_section_body(
         return None
 
     heading_line = lines[heading_idx]
-    # Sanity: the heading line should still start with "## " or "### ".
-    if not (heading_line.startswith("## ") or heading_line.startswith("### ")):
+    # Sanity: heading line must still parse as an H2/H3 under the same
+    # rules the parser uses (whitespace-flexible, H4+-aware).
+    if not _is_h2_or_h3_heading(heading_line):
         return None
 
     # Find the next H2/H3 boundary, code-fence-aware.
@@ -397,7 +411,7 @@ def _replace_section_body(
             continue
         if in_fence:
             continue
-        if ln.startswith("## ") or ln.startswith("### "):
+        if _is_h2_or_h3_heading(ln):
             end_idx = j
             break
 

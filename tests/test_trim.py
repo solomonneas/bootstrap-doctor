@@ -594,6 +594,47 @@ def test_render_plan_summary_footer_counts(cfg: Config, workspace_dir: Path) -> 
 
 
 # ---------------------------------------------------------------------------
+# IMPORTANT 4: heading boundary detection matches parsing.py
+# ---------------------------------------------------------------------------
+
+
+def test_apply_respects_tab_separated_headings_as_boundaries(
+    cfg: Config, workspace_dir: Path
+) -> None:
+    """``##\\tFoo`` parses as an H2; trim must recognize it as a boundary.
+
+    Mixing a space-separated H2 followed by a tab-separated H2 was
+    silently flattening the second heading's body into the first
+    section's replacement, because the literal ``startswith('## ')``
+    check missed the tab-separated heading.
+    """
+    bs_text = (
+        "## First\n"
+        "first body line\n"
+        "\n"
+        "##\tSecond\n"
+        "second body line\n"
+    )
+    bs = write_bootstrap(workspace_dir, "AGENTS.md", bs_text)
+    sections = parse_file(bs)
+    secs = {s.heading_text: s for s in sections}
+    # Parser sees both headings.
+    assert set(secs) == {"First", "Second"}
+    v = make_verdict(
+        secs["First"], topic="First Topic", hook="moved.", tags=(), category=""
+    )
+    plan = build_plan([v], cfg, today_iso=TODAY)
+    apply_plan(plan, cfg, apply=True, force=True)
+    bs_after = bs.read_text()
+    # Second section's heading + body must survive verbatim.
+    assert "##\tSecond" in bs_after
+    assert "second body line" in bs_after
+    # First section's body was replaced by a breadcrumb.
+    assert "first body line" not in bs_after
+    assert "- See [First Topic]" in bs_after
+
+
+# ---------------------------------------------------------------------------
 # BLOCKER 1: cards write before bootstrap rewrites
 # ---------------------------------------------------------------------------
 
