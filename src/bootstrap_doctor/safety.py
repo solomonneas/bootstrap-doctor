@@ -161,6 +161,15 @@ def _find_repo_root(start: Path) -> Path | None:
         current = current.parent
 
 
+def find_repo_root(start: Path) -> Path | None:
+    """Public wrapper around the upward ``.git`` walk.
+
+    Returns the directory containing ``.git`` (file or dir), or ``None`` if
+    ``start`` is not inside any git repository.
+    """
+    return _find_repo_root(start)
+
+
 def assert_git_clean(repo_dir: Path, *, allow_untracked: bool = False) -> None:
     """Verify `repo_dir` has a clean git working tree.
 

@@ -594,6 +594,96 @@ def test_render_plan_summary_footer_counts(cfg: Config, workspace_dir: Path) -> 
 
 
 # ---------------------------------------------------------------------------
+# IMPORTANT 6: git-clean check covers cards_dir repo when it is separate
+# ---------------------------------------------------------------------------
+
+
+def test_apply_blocks_on_dirty_cards_repo_separate_from_workspace(
+    tmp_path: Path,
+) -> None:
+    """When cards_dir lives in its own git repo, a dirty state there
+    must block apply just like a dirty workspace repo does."""
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    cards = tmp_path / "cards-repo"
+    cards.mkdir()
+    cache = tmp_path / "cache"
+
+    (ws / "AGENTS.md").write_text("## Old\nbody\n")
+    init_clean_git(ws)
+    # Cards lives in its own repo.
+    (cards / "README.md").write_text("just a marker\n")
+    init_clean_git(cards)
+    # Make the cards repo dirty AFTER the initial commit.
+    (cards / "README.md").write_text("just a marker\nedited\n")
+
+    cfg_path = tmp_path / "config.toml"
+    cfg_path.write_text(
+        f'''
+workspace_dir = "{ws}"
+cards_dir = "{cards}"
+gateway_url = "http://localhost:18789"
+gateway_model = "test-model"
+
+[cache]
+dir = "{cache}"
+'''
+    )
+    cfg2 = resolve_config(config_file=str(cfg_path))
+
+    sections = parse_file(ws / "AGENTS.md")
+    sec = sections[0]
+    plan = build_plan([make_verdict(sec)], cfg2, today_iso=TODAY)
+    with pytest.raises(DirtyWorkspaceError) as exc:
+        apply_plan(plan, cfg2, apply=True, force=False)
+    # Error mentions the cards repo so the operator knows which to clean.
+    assert str(cards) in str(exc.value) or "cards" in str(exc.value).lower()
+
+
+def test_apply_warns_when_cards_dir_not_in_any_repo(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Cards-dir outside any git repo: warn, don't abort.
+
+    Untracked-but-non-git cards directories are a valid setup (e.g.,
+    centralized cards under a non-repo path).
+    """
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    cards = tmp_path / "non-repo-cards"
+    cards.mkdir()
+    cache = tmp_path / "cache"
+
+    (ws / "AGENTS.md").write_text("## Old\nbody\n")
+    init_clean_git(ws)
+
+    cfg_path = tmp_path / "config.toml"
+    cfg_path.write_text(
+        f'''
+workspace_dir = "{ws}"
+cards_dir = "{cards}"
+gateway_url = "http://localhost:18789"
+gateway_model = "test-model"
+
+[cache]
+dir = "{cache}"
+'''
+    )
+    cfg2 = resolve_config(config_file=str(cfg_path))
+
+    sections = parse_file(ws / "AGENTS.md")
+    sec = sections[0]
+    plan = build_plan([make_verdict(sec)], cfg2, today_iso=TODAY)
+    # Should NOT raise.
+    summary = apply_plan(plan, cfg2, apply=True, force=False)
+    assert summary.actions_applied == 1
+    err = capsys.readouterr().err
+    # A warning about the non-repo cards path should appear on stderr.
+    assert "cards" in err.lower()
+    assert str(cards) in err or "not a git repo" in err.lower()
+
+
+# ---------------------------------------------------------------------------
 # IMPORTANT 5: defense-in-depth sanitization of topic / hook in trim
 # ---------------------------------------------------------------------------
 

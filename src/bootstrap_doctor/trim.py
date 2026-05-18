@@ -37,8 +37,10 @@ from .parsing import H2_RE, H3_RE, H4_PLUS_RE, Section, parse_file
 from .paths import Config
 from .safety import (
     UnsafeTargetError,
+    assert_git_clean,
     assert_git_clean_or_force,
     atomic_write_text,
+    find_repo_root,
     resolve_card_target,
     slugify,
 )
@@ -410,6 +412,37 @@ def build_plan(
 # --- apply_plan -------------------------------------------------------------
 
 
+def _assert_repos_clean_or_force(cfg: Config, force: bool) -> None:
+    """Git-clean preflight covering both workspace_dir and cards_dir.
+
+    When ``cards_dir`` lives in a different repo from ``workspace_dir``
+    (legitimate config: centralized cards), this asserts clean on
+    BOTH so a dirty cards repo can't quietly accept card writes.
+
+    If ``cards_dir`` is not inside any git repo, a stderr warning is
+    emitted but apply continues; non-tracked cards directories are a
+    valid setup.
+    """
+    import sys as _sys
+
+    if force:
+        return
+    assert_git_clean(cfg.workspace_dir)
+
+    ws_root = find_repo_root(cfg.workspace_dir)
+    cards_root = find_repo_root(cfg.cards_dir)
+    if cards_root is None:
+        print(
+            f"warning: cards_dir {cfg.cards_dir} is not in a git repo; "
+            f"card writes will not be revertable via git",
+            file=_sys.stderr,
+        )
+        return
+    if ws_root is None or cards_root != ws_root:
+        # Distinct repo (or workspace not in any repo): check cards too.
+        assert_git_clean(cfg.cards_dir)
+
+
 def _find_section_in_fresh_parse(
     fresh_sections: list[Section], target: Section
 ) -> Section | None:
@@ -521,7 +554,7 @@ def apply_plan(
             cards_written=(),
         )
 
-    assert_git_clean_or_force(cfg.workspace_dir, force)
+    _assert_repos_clean_or_force(cfg, force)
 
     # Group live (non-skipped) actions by bootstrap file.
     live = [a for a in actions if not a.skipped]
