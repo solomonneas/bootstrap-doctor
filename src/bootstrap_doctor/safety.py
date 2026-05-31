@@ -38,13 +38,20 @@ def atomic_write_text(path: Path, content: str) -> None:
     the write we best-effort unlink the tempfile so we do not leak debris.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
+    existing_mode: int | None = None
+    try:
+        existing_mode = path.stat().st_mode & 0o777
+    except FileNotFoundError:
+        pass
     fd, tmp = tempfile.mkstemp(
         dir=str(path.parent),
         prefix=f".{path.name}.",
         suffix=".tmp",
     )
     try:
-        with os.fdopen(fd, "w") as f:
+        if existing_mode is not None:
+            os.fchmod(fd, existing_mode)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(content)
         os.replace(tmp, path)
     except Exception:

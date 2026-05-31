@@ -18,7 +18,6 @@ from pathlib import Path
 from bootstrap_doctor.paths import Config
 from bootstrap_doctor.safety import UnsafeTargetError, ensure_within
 
-
 PRIMARY_LABEL = "workspace"
 
 # Severity strings -------------------------------------------------------

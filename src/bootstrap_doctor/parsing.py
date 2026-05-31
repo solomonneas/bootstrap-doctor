@@ -29,7 +29,6 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-
 # A line counts as an H2 heading iff it matches `^## ` (exactly two hashes,
 # then a space). H3 is `^### `. Anything deeper (`^#### `, `^##### `, etc.)
 # is NOT a section break: matched separately below to keep H3 from grabbing

@@ -15,7 +15,6 @@ from bootstrap_doctor.status import (
     run,
 )
 
-
 # Helpers -----------------------------------------------------------------
 
 

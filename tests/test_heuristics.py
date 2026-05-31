@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 
 from bootstrap_doctor.heuristics import (
-    Candidate,
     find_duplicates,
     has_long_code_block,
     is_large,
@@ -16,7 +15,6 @@ from bootstrap_doctor.heuristics import (
 )
 from bootstrap_doctor.parsing import Section
 from bootstrap_doctor.paths import resolve_config
-
 
 # ---------------------------------------------------------------------------
 # Test helpers

@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Added GitHub Actions CI for tests, linting, typing, packaging, and dependency audit checks.
+- Added Ruff, mypy, build, and pip-audit dev tooling configuration.
+- Added CLI-level trim integration coverage for copied-workspace apply, idempotency, and dirty-workspace blocking.
+- Tightened config validation for malformed gateway URLs, path separators, control characters, and whitespace-padded string values.
+- Read-only verbs can resolve config when `cards_dir` does not exist yet.
+
+### Fixed
+
+- Atomic text writes now preserve existing file permissions on overwrite.
+- `trim --apply` now reports card-write failures as expected hard failures instead of unexpected exceptions.
+
 ## [v0.1.0] - 2026-05-18
 
 First release.

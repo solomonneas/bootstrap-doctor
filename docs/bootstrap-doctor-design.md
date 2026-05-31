@@ -57,7 +57,9 @@ Both configurable. The 12k ceiling is empirical so we leave headroom.
 - All writes dry-run by default; `--apply` required.
 - Atomic writes (write temp, rename) prevent torn files.
 - Path-traversal guard: card slug must resolve inside `memory/cards/`.
-- Refuses to run if `git status` in workspace is dirty (so any change is revertable), overridable with `--force`.
+- Read-only verbs allow a missing `cards_dir`; mutating trim requires it to resolve through the normal apply path.
+- Refuses to run if `git status` in workspace is dirty (so any change is revertable), overridable with `--force`. If `cards_dir` is in a separate git repo, that repo is checked too.
+- Card writes happen before bootstrap rewrites. A card-write failure aborts before breadcrumbs are inserted.
 - LLM verdict cache stored at `~/.cache/bootstrap-doctor/verdicts.json`; clear with `--no-cache`.
 
 ### Config
@@ -125,6 +127,7 @@ This is a new standalone repo. Reference points:
 4. **Idempotency** - re-running `audit` on the trimmed output produces zero new `move` verdicts.
 5. **Safety** - running with dirty workspace `git status` aborts with a clear message; `--force` overrides.
 6. **Multi-workspace** - running with `named_workspaces` populated processes each workspace independently; cards generated from `workspace-claude` don't end up referenced in `workspace-main` breadcrumbs.
+7. **Quality gates** - `pytest -q`, `python3 -m ruff check .`, `python3 -m mypy src/bootstrap_doctor`, `python3 -m build`, and `pip-audit . --skip-editable` pass before release.
 
 ## Out of scope for v1
 

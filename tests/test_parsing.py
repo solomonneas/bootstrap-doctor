@@ -12,12 +12,10 @@ from pathlib import Path
 import pytest
 
 from bootstrap_doctor.parsing import (
-    Section,
     last_touched_git_mtime,
     parse_file,
     parse_text,
 )
-
 
 # ----- parse_text basics --------------------------------------------------
 

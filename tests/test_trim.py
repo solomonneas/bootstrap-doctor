@@ -1,27 +1,22 @@
 """Tests for trim.py: build move-plan + apply card writes + breadcrumb in-place."""
 from __future__ import annotations
 
-import os
 import subprocess
 from pathlib import Path
 
 import pytest
 
+from bootstrap_doctor import trim as trim_mod
 from bootstrap_doctor.judge import Verdict
 from bootstrap_doctor.parsing import Section, parse_file
 from bootstrap_doctor.paths import Config, resolve_config
 from bootstrap_doctor.safety import DirtyWorkspaceError
-from bootstrap_doctor import safety as safety_mod
-from bootstrap_doctor import trim as trim_mod
 from bootstrap_doctor.trim import (
     CardWriteError,
-    TrimAction,
-    TrimSummary,
     apply_plan,
     build_plan,
     render_plan,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

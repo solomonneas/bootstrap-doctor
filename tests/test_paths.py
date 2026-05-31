@@ -22,7 +22,6 @@ from bootstrap_doctor.paths import (
     resolve_config,
 )
 
-
 # Helpers -----------------------------------------------------------------
 
 
@@ -80,7 +79,6 @@ def test_defaults_applied_when_no_config_no_env_no_flags(
     workspace: Path, cards: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     _clear_env(monkeypatch)
-    cache_dir = tmp_path / "cache"
     # Point flags at our tmp workspace + cards so we don't depend on the real
     # filesystem. Everything else should come from defaults.
     cfg = resolve_config(
@@ -322,18 +320,17 @@ def test_allow_missing_cards_passes_if_parent_exists(
     assert cfg.cards_dir == missing_cards.resolve()
 
 
-def test_allow_missing_cards_fails_if_parent_missing(
+def test_allow_missing_cards_passes_if_parent_missing(
     workspace: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _clear_env(monkeypatch)
     nowhere = workspace / "deep" / "nope" / "cards"
-    with pytest.raises(ConfigError) as exc:
-        resolve_config(
-            workspace_dir=str(workspace),
-            cards_dir=str(nowhere),
-            allow_missing_cards=True,
-        )
-    assert "cards" in str(exc.value).lower()
+    cfg = resolve_config(
+        workspace_dir=str(workspace),
+        cards_dir=str(nowhere),
+        allow_missing_cards=True,
+    )
+    assert cfg.cards_dir == nowhere.resolve()
 
 
 def test_missing_cards_without_flag_raises(
@@ -514,6 +511,29 @@ def test_invalid_gateway_url_scheme_raises(
         )
 
 
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "http://",
+        "https://",
+        "http://example.test\nX-Injected: y",
+        " http://example.test",
+        "http://example.test ",
+        "http://example.test:bad",
+    ],
+)
+def test_invalid_gateway_url_shape_raises(
+    workspace: Path, cards: Path, monkeypatch: pytest.MonkeyPatch, bad: str
+) -> None:
+    _clear_env(monkeypatch)
+    with pytest.raises(ConfigError):
+        resolve_config(
+            workspace_dir=str(workspace),
+            cards_dir=str(cards),
+            gateway_url=bad,
+        )
+
+
 def test_https_gateway_url_ok(
     workspace: Path, cards: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -580,6 +600,29 @@ tracked_files = ["sub/AGENTS.md"]
         resolve_config(config_file=str(cfg_path))
 
 
+@pytest.mark.parametrize("bad", ["sub\\AGENTS.md", " AGENTS.md", "AGENTS.md\n"])
+def test_tracked_files_reject_backslash_whitespace_and_controls(
+    workspace: Path,
+    cards: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    bad: str,
+) -> None:
+    _clear_env(monkeypatch)
+    escaped = bad.replace("\\", "\\\\").replace("\n", "\\n")
+    cfg_path = tmp_path / "cfg.toml"
+    _write_toml(
+        cfg_path,
+        f"""
+workspace_dir = "{workspace}"
+cards_dir = "{cards}"
+tracked_files = ["{escaped}"]
+""",
+    )
+    with pytest.raises(ConfigError):
+        resolve_config(config_file=str(cfg_path))
+
+
 # Validation: named_workspaces -------------------------------------------
 
 
@@ -611,6 +654,29 @@ def test_named_workspaces_empty_string_raises(
 workspace_dir = "{workspace}"
 cards_dir = "{cards}"
 named_workspaces = [""]
+""",
+    )
+    with pytest.raises(ConfigError):
+        resolve_config(config_file=str(cfg_path))
+
+
+@pytest.mark.parametrize("bad", ["bad\\name", " workspace-claude", "workspace\nx"])
+def test_named_workspaces_reject_backslash_whitespace_and_controls(
+    workspace: Path,
+    cards: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    bad: str,
+) -> None:
+    _clear_env(monkeypatch)
+    escaped = bad.replace("\\", "\\\\").replace("\n", "\\n")
+    cfg_path = tmp_path / "cfg.toml"
+    _write_toml(
+        cfg_path,
+        f"""
+workspace_dir = "{workspace}"
+cards_dir = "{cards}"
+named_workspaces = ["{escaped}"]
 """,
     )
     with pytest.raises(ConfigError):

@@ -31,7 +31,6 @@ from pathlib import Path
 from .parsing import Section, last_touched_git_mtime
 from .paths import Config
 
-
 # Constants (no config knobs in v1) ---------------------------------------
 
 #: A fenced code block must exceed this many content lines (lines BETWEEN

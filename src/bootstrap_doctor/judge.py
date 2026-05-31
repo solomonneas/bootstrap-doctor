@@ -35,9 +35,10 @@ import json
 import os
 import sys
 import time
-from dataclasses import dataclass, field
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import requests
 
@@ -45,7 +46,6 @@ from .heuristics import Candidate
 from .parsing import Section
 from .paths import Config
 from .safety import atomic_write_text
-
 
 # --- Constants --------------------------------------------------------------
 

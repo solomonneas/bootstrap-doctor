@@ -20,7 +20,7 @@ bootstrap-doctor audit               # heuristic shortlist plus LLM verdicts (ke
 bootstrap-doctor trim [--apply]      # apply the audit plan: write cards, replace sections with breadcrumbs
 ```
 
-`status` and `audit` are read-only. `trim` defaults to dry-run; pass `--apply` to actually write.
+`status` and `audit` are read-only. They can run even if `cards_dir` does not exist yet. `trim` defaults to dry-run; pass `--apply` to actually write.
 
 ## Install
 
@@ -51,7 +51,7 @@ workspace: /home/you/.openclaw/workspace
   MEMORY.md         15,720 chars   192 lines   OVER hard (11,500)
 ```
 
-(Exact output shape TODO; `--json` for machine-readable output.)
+Use `--json` for machine-readable output with `soft_limit`, `hard_limit`, and one row per tracked file.
 
 ### audit
 
@@ -111,6 +111,8 @@ stale_days = 60
 
 Layering: built-in defaults, then config file, then env vars, then CLI flags.
 
+Path-like values must be non-empty strings without control characters or leading/trailing whitespace. `tracked_files` and `named_workspaces` must be local names, not paths.
+
 ## How it works
 
 bootstrap-doctor runs a four-stage pipeline.
@@ -125,8 +127,20 @@ bootstrap-doctor runs a four-stage pipeline.
 - Dry-run by default. `--apply` required for any write.
 - Atomic writes: temp file plus rename, so a torn write cannot leave a half-rewritten bootstrap file.
 - Path-traversal guard on card slugs (must resolve inside `cards_dir`).
-- Refuses to run if `git status` in the workspace is dirty, so any change is revertable. Override with `--force`.
+- Refuses to run if `git status` in the workspace is dirty, so any change is revertable. If `cards_dir` lives in a separate git repo, that repo must be clean too. Override with `--force`.
 - Verdict cache is local-only (`~/.cache/bootstrap-doctor/verdicts.json`). Clear with `--no-cache`.
+- Card-write failures abort before bootstrap files are rewritten, so a failed run cannot leave breadcrumbs pointing at missing cards.
+
+## Development
+
+```bash
+python3 -m pip install -e ".[dev]"
+pytest -q
+python3 -m ruff check .
+python3 -m mypy src/bootstrap_doctor
+python3 -m build
+pip-audit . --skip-editable
+```
 
 ## License
 

@@ -13,7 +13,6 @@ from bootstrap_doctor import cli as cli_mod
 from bootstrap_doctor.judge import JudgeStats, Verdict
 from bootstrap_doctor.paths import Config
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -689,6 +688,57 @@ def test_trim_aborts_with_failures_even_under_force(
         ["trim", "--config", str(cfg_path), "--apply", "--force"]
     )
     assert code == 2
+
+
+def test_trim_card_write_error_returns_two(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    workspace, cards = _mk_workspace(tmp_path)
+    body = "## Big Section\n\n" + ("x" * 500) + "\n"
+    bootstrap = workspace / "AGENTS.md"
+    bootstrap.write_text(body)
+    _git_init(workspace)
+    cfg_path = _write_config(tmp_path, workspace=workspace, cards=cards)
+
+    from bootstrap_doctor import judge as judge_mod
+    from bootstrap_doctor import trim as trim_mod
+
+    def fake_judge_all(
+        candidates: list, cfg: Config, **kwargs: Any
+    ) -> tuple[list[Verdict], JudgeStats]:
+        verdicts = [
+            Verdict(
+                section=candidates[0].section,
+                decision="move",
+                topic="big section",
+                category="session-log",
+                tags=(),
+                hook="moved.",
+                reasoning="historical",
+                source="gateway",
+                body_sha="x" * 64,
+            )
+        ]
+        return verdicts, JudgeStats(requests_made=1)
+
+    def fail_card_write(*_args: Any, **_kwargs: Any):
+        target = cards / "big-section.md"
+        raise trim_mod.CardWriteError(
+            "card write failed at big-section.md",
+            failed_card=target,
+            cards_written=(),
+        )
+
+    monkeypatch.setattr(judge_mod, "judge_all", fake_judge_all)
+    monkeypatch.setattr(trim_mod, "apply_plan", fail_card_write)
+
+    code = cli_mod.main(["trim", "--config", str(cfg_path), "--apply"])
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "card write failed" in captured.err
+    assert "unexpected error" not in captured.err
 
 
 def test_trim_no_actions_returns_zero(

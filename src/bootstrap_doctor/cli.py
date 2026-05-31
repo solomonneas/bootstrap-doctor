@@ -31,7 +31,6 @@ from typing import Any
 
 from bootstrap_doctor import __version__
 
-
 # ---------------------------------------------------------------------------
 # Argument parsing
 # ---------------------------------------------------------------------------
@@ -438,6 +437,9 @@ def run_trim(args: argparse.Namespace) -> int:
             return 2
         except UnsafeTargetError as exc:
             _print_error(f"unsafe path: {exc}")
+            return 2
+        except trim_mod.CardWriteError as exc:
+            _print_error(str(exc))
             return 2
         print(
             f"applied {summary.actions_applied} actions, "

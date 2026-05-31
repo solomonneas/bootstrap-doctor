@@ -4,7 +4,6 @@ from __future__ import annotations
 import hashlib
 import json
 import time
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -12,14 +11,12 @@ import pytest
 
 from bootstrap_doctor.heuristics import Candidate
 from bootstrap_doctor.judge import (
-    JudgeError,
     JudgeStats,
     Verdict,
     judge_all,
 )
 from bootstrap_doctor.parsing import Section
 from bootstrap_doctor.paths import Config, resolve_config
-
 
 # ---------------------------------------------------------------------------
 # Test helpers

@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import datetime as dt
 import difflib
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 from .judge import Verdict
@@ -38,7 +38,6 @@ from .paths import Config
 from .safety import (
     UnsafeTargetError,
     assert_git_clean,
-    assert_git_clean_or_force,
     atomic_write_text,
     find_repo_root,
     resolve_card_target,

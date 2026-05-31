@@ -43,14 +43,15 @@ Validation rules (all raise :class:`ConfigError`):
 
   - ``workspace_dir`` must exist and be a directory.
   - ``cards_dir`` must exist and be a directory, unless
-    ``allow_missing_cards=True`` and the parent directory exists.
+    ``allow_missing_cards=True``.
   - ``0 < soft_limit < hard_limit < 12000`` (12k is the empirical ceiling;
     ``hard_limit`` must leave headroom).
   - ``min_section_chars > 0`` and ``stale_days > 0``.
   - ``gateway_url`` must start with ``http://`` or ``https://``.
   - ``tracked_files`` must be non-empty; each entry ends in ``.md`` and
-    contains no ``/``.
-  - Each ``named_workspaces`` entry must be a non-empty string without ``/``.
+    contains no path separators.
+  - Each ``named_workspaces`` entry must be a non-empty string without path
+    separators.
 """
 from __future__ import annotations
 
@@ -59,7 +60,7 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-
+from urllib.parse import urlparse
 
 # Defaults -----------------------------------------------------------------
 
@@ -112,6 +113,20 @@ class Config:
 def _expand(path_str: str) -> Path:
     """Expand ``~`` and resolve to an absolute Path."""
     return Path(os.path.expanduser(path_str)).resolve()
+
+
+def _has_control_chars(value: str) -> bool:
+    return any(ord(ch) < 32 or ord(ch) == 127 for ch in value)
+
+
+def _validate_string_value(raw: Any, label: str) -> str:
+    if not isinstance(raw, str) or not raw:
+        raise ConfigError(f"{label} must be a non-empty string, got {raw!r}")
+    if raw.strip() != raw:
+        raise ConfigError(f"{label} must not have leading or trailing whitespace")
+    if _has_control_chars(raw):
+        raise ConfigError(f"{label} must not contain control characters")
+    return raw
 
 
 def _load_toml(path: Path) -> dict[str, Any]:
@@ -240,8 +255,7 @@ def _layer_values(file_data: dict[str, Any]) -> dict[str, Any]:
 
 
 def _validate_workspace_dir(raw: Any) -> Path:
-    if not isinstance(raw, str) or not raw:
-        raise ConfigError(f"workspace_dir must be a non-empty string, got {raw!r}")
+    raw = _validate_string_value(raw, "workspace_dir")
     path = _expand(raw)
     if not path.exists():
         raise ConfigError(f"workspace_dir does not exist: {path}")
@@ -251,19 +265,13 @@ def _validate_workspace_dir(raw: Any) -> Path:
 
 
 def _validate_cards_dir(raw: Any, *, allow_missing: bool) -> Path:
-    if not isinstance(raw, str) or not raw:
-        raise ConfigError(f"cards_dir must be a non-empty string, got {raw!r}")
+    raw = _validate_string_value(raw, "cards_dir")
     path = _expand(raw)
     if path.exists():
         if not path.is_dir():
             raise ConfigError(f"cards_dir is not a directory: {path}")
         return path
     if allow_missing:
-        parent = path.parent
-        if not parent.exists() or not parent.is_dir():
-            raise ConfigError(
-                f"cards_dir is missing and its parent does not exist: {path}"
-            )
         return path
     raise ConfigError(f"cards_dir does not exist: {path}")
 
@@ -288,19 +296,24 @@ def _validate_limits(soft: Any, hard: Any) -> tuple[int, int]:
 
 
 def _validate_gateway_url(raw: Any) -> str:
-    if not isinstance(raw, str) or not raw:
-        raise ConfigError(f"gateway_url must be a non-empty string, got {raw!r}")
-    if not (raw.startswith("http://") or raw.startswith("https://")):
+    raw = _validate_string_value(raw, "gateway_url")
+    parsed = urlparse(raw)
+    if parsed.scheme not in {"http", "https"}:
         raise ConfigError(
             f"gateway_url must start with http:// or https://, got {raw!r}"
         )
+    try:
+        hostname = parsed.hostname
+        _port = parsed.port
+    except ValueError as exc:
+        raise ConfigError(f"gateway_url is not valid: {raw!r}") from exc
+    if not parsed.netloc or not hostname:
+        raise ConfigError(f"gateway_url must include a host, got {raw!r}")
     return raw
 
 
 def _validate_gateway_model(raw: Any) -> str:
-    if not isinstance(raw, str) or not raw:
-        raise ConfigError(f"gateway_model must be a non-empty string, got {raw!r}")
-    return raw
+    return _validate_string_value(raw, "gateway_model")
 
 
 def _validate_tracked_files(raw: Any) -> tuple[str, ...]:
@@ -312,13 +325,10 @@ def _validate_tracked_files(raw: Any) -> tuple[str, ...]:
         raise ConfigError("tracked_files must not be empty")
     out: list[str] = []
     for entry in raw:
-        if not isinstance(entry, str) or not entry:
+        entry = _validate_string_value(entry, "tracked_files entries")
+        if "/" in entry or "\\" in entry:
             raise ConfigError(
-                f"tracked_files entries must be non-empty strings, got {entry!r}"
-            )
-        if "/" in entry:
-            raise ConfigError(
-                f"tracked_files entries must not contain '/', got {entry!r}"
+                f"tracked_files entries must not contain path separators, got {entry!r}"
             )
         if not entry.endswith(".md"):
             raise ConfigError(
@@ -335,13 +345,10 @@ def _validate_named_workspaces(raw: Any) -> tuple[str, ...]:
         )
     out: list[str] = []
     for entry in raw:
-        if not isinstance(entry, str) or not entry:
+        entry = _validate_string_value(entry, "named_workspaces entries")
+        if "/" in entry or "\\" in entry:
             raise ConfigError(
-                f"named_workspaces entries must be non-empty strings, got {entry!r}"
-            )
-        if "/" in entry:
-            raise ConfigError(
-                f"named_workspaces entries must not contain '/', got {entry!r}"
+                f"named_workspaces entries must not contain path separators, got {entry!r}"
             )
         out.append(entry)
     return tuple(out)
@@ -366,8 +373,7 @@ def _validate_cache_dir(raw: Any) -> Path:
     The only structural check here is: if the path already exists,
     it must be a directory.
     """
-    if not isinstance(raw, str) or not raw:
-        raise ConfigError(f"cache_dir must be a non-empty string, got {raw!r}")
+    raw = _validate_string_value(raw, "cache_dir")
     path = _expand(raw)
     if path.exists() and not path.is_dir():
         raise ConfigError(f"cache_dir is not a directory: {path}")

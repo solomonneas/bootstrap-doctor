@@ -19,7 +19,6 @@ from bootstrap_doctor.safety import (
     slugify,
 )
 
-
 # --- atomic_write_text -------------------------------------------------------
 
 
@@ -41,6 +40,17 @@ def test_atomic_write_text_overwrites_existing(tmp_path: Path) -> None:
     target.write_text("old contents")
     atomic_write_text(target, "new contents")
     assert target.read_text() == "new contents"
+
+
+def test_atomic_write_text_preserves_existing_file_mode(tmp_path: Path) -> None:
+    target = tmp_path / "out.txt"
+    target.write_text("old contents")
+    os.chmod(target, 0o640)
+
+    atomic_write_text(target, "new contents")
+
+    assert target.read_text() == "new contents"
+    assert target.stat().st_mode & 0o777 == 0o640
 
 
 def test_atomic_write_text_cleans_up_tempfile_on_failure(tmp_path: Path) -> None:
