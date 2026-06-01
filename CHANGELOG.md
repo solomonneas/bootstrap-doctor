@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Changed
+- Pin `brigade-cli>=0.8.0` from PyPI instead of the git ref now that brigade 0.8.0 is published; dropped the hatchling direct-reference allowance.
 - Source bootstrap size limits (soft/hard/ceiling) from `brigade.budgets` (added `brigade-cli` dependency) instead of redeclaring them locally, ending drift across the escoffier-labs tooling. Repository moved to the `escoffier-labs` org.
 
 - Added GitHub Actions CI for tests, linting, typing, packaging, and dependency audit checks.
