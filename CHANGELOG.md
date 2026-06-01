@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Changed
+- Source bootstrap size limits (soft/hard/ceiling) from `brigade.budgets` (added `brigade-cli` dependency) instead of redeclaring them locally, ending drift across the escoffier-labs tooling. Repository moved to the `escoffier-labs` org.
 
 - Added GitHub Actions CI for tests, linting, typing, packaging, and dependency audit checks.
 - Added Ruff, mypy, build, and pip-audit dev tooling configuration.

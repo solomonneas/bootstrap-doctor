@@ -198,7 +198,7 @@ def _fmt_delta(n: int) -> str:
 
 def render_text(rows: list[FileStatus], cfg: Config) -> str:
     """Human-readable table, grouped by workspace_label."""
-    ceiling = 12000  # matches paths.HARD_LIMIT_CEILING
+    from .paths import HARD_LIMIT_CEILING as ceiling  # canonical, from brigade.budgets
     lines: list[str] = [
         f"bootstrap-doctor status  "
         f"(soft={cfg.soft_limit}, hard={cfg.hard_limit}, ceiling={ceiling})"

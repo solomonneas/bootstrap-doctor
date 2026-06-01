@@ -27,7 +27,7 @@ bootstrap-doctor trim [--apply]      # apply the audit plan: write cards, replac
 From a local clone:
 
 ```bash
-git clone https://github.com/solomonneas/bootstrap-doctor
+git clone https://github.com/escoffier-labs/bootstrap-doctor
 cd bootstrap-doctor
 pipx install -e .
 ```

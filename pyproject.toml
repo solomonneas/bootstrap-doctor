@@ -21,10 +21,11 @@ classifiers = [
 ]
 dependencies = [
   "requests>=2.31",
+  "brigade-cli @ git+https://github.com/escoffier-labs/brigade.git@main",
 ]
 
 [project.urls]
-Homepage = "https://github.com/solomonneas/bootstrap-doctor"
+Homepage = "https://github.com/escoffier-labs/bootstrap-doctor"
 Repository = "https://github.com/solomonneas/bootstrap-doctor"
 
 [project.scripts]
