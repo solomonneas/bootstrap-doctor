@@ -66,9 +66,13 @@ from urllib.parse import urlparse
 # of truth shared across the escoffier-labs tooling). Imported under the local
 # names this module already exposes so downstream references stay unchanged.
 from brigade.budgets import (
-    DEFAULT_BOOTSTRAP_SOFT_LIMIT as DEFAULT_SOFT_LIMIT,
-    DEFAULT_BOOTSTRAP_HARD_LIMIT as DEFAULT_HARD_LIMIT,
     BOOTSTRAP_HARD_LIMIT_CEILING as HARD_LIMIT_CEILING,
+)
+from brigade.budgets import (
+    DEFAULT_BOOTSTRAP_HARD_LIMIT as DEFAULT_HARD_LIMIT,
+)
+from brigade.budgets import (
+    DEFAULT_BOOTSTRAP_SOFT_LIMIT as DEFAULT_SOFT_LIMIT,
 )
 
 # Defaults -----------------------------------------------------------------
