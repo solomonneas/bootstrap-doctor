@@ -41,6 +41,10 @@ dev = [
   "types-requests>=2.31",
 ]
 
+[tool.hatch.metadata]
+# brigade-cli is referenced by git URL until it is pinned to a PyPI release.
+allow-direct-references = true
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/bootstrap_doctor"]
 
