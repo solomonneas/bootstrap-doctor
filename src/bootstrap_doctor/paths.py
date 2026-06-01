@@ -62,14 +62,25 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+# Bootstrap size thresholds are owned by brigade.budgets (the canonical source
+# of truth shared across the escoffier-labs tooling). Imported under the local
+# names this module already exposes so downstream references stay unchanged.
+from brigade.budgets import (
+    BOOTSTRAP_HARD_LIMIT_CEILING as HARD_LIMIT_CEILING,
+)
+from brigade.budgets import (
+    DEFAULT_BOOTSTRAP_HARD_LIMIT as DEFAULT_HARD_LIMIT,
+)
+from brigade.budgets import (
+    DEFAULT_BOOTSTRAP_SOFT_LIMIT as DEFAULT_SOFT_LIMIT,
+)
+
 # Defaults -----------------------------------------------------------------
 
 DEFAULT_WORKSPACE_DIR = "~/.openclaw/workspace"
 DEFAULT_CARDS_DIR = "~/.openclaw/workspace/memory/cards"
 DEFAULT_GATEWAY_URL = "http://localhost:11434"
 DEFAULT_GATEWAY_MODEL = "deepseek-v4-pro:cloud"
-DEFAULT_SOFT_LIMIT = 10000
-DEFAULT_HARD_LIMIT = 11500
 DEFAULT_TRACKED_FILES: list[str] = [
     "AGENTS.md",
     "TOOLS.md",
@@ -84,8 +95,6 @@ DEFAULT_NAMED_WORKSPACES: list[str] = []
 DEFAULT_MIN_SECTION_CHARS = 400
 DEFAULT_STALE_DAYS = 60
 DEFAULT_CACHE_DIR = "~/.cache/bootstrap-doctor"
-
-HARD_LIMIT_CEILING = 12000  # empirical OpenClaw bootstrap char ceiling
 
 
 class ConfigError(Exception):
