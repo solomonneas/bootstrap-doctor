@@ -21,7 +21,7 @@ classifiers = [
 ]
 dependencies = [
   "requests>=2.31",
-  "brigade-cli @ git+https://github.com/escoffier-labs/brigade.git@main",
+  "brigade-cli>=0.8.0",
 ]
 
 [project.urls]
@@ -40,10 +40,6 @@ dev = [
   "ruff>=0.5",
   "types-requests>=2.31",
 ]
-
-[tool.hatch.metadata]
-# brigade-cli is referenced by git URL until it is pinned to a PyPI release.
-allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/bootstrap_doctor"]
