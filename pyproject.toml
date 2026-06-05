@@ -26,7 +26,7 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://github.com/escoffier-labs/bootstrap-doctor"
-Repository = "https://github.com/solomonneas/bootstrap-doctor"
+Repository = "https://github.com/escoffier-labs/bootstrap-doctor"
 
 [project.scripts]
 bootstrap-doctor = "bootstrap_doctor.cli:main"
