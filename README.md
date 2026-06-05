@@ -115,6 +115,58 @@ Path-like values must be non-empty strings without control characters or leading
 
 ## How it works
 
+```mermaid
+flowchart TB
+    subgraph INPUTS [" inputs "]
+        FILES["<b>Bootstrap files</b><br/>AGENTS.md · TOOLS.md · MEMORY.md · ..."]
+        CONFIG["<b>Config layering</b><br/>defaults · config.toml · env · flags"]
+        BUDGETS["<b>brigade.budgets</b><br/>soft / hard size ceilings"]
+        GIT["<b>Git history</b><br/>per-section last-touched mtime"]
+    end
+
+    BUDGETS -. canonical limits .-> CONFIG
+
+    subgraph PIPELINE [" four-stage pipeline "]
+        PARSE["<b>Section parser</b><br/>split by H2/H3 headings"]
+        HEUR["<b>Heuristic shortlist</b><br/>size · code blocks · staleness · duplication"]
+        JUDGE["<b>LLM judge</b><br/>keep / move / unsure"]
+        PLAN["<b>Trim plan</b><br/>cards + breadcrumbs, dry-run by default"]
+    end
+
+    FILES & GIT --> PARSE
+    CONFIG -. limits + tracked files .-> PARSE
+    PARSE ==> HEUR ==> JUDGE ==> PLAN
+
+    GATEWAY["<b>LLM gateway</b><br/>any OpenAI-compatible endpoint"]
+    CACHE["<b>Verdict cache</b><br/>SHA256 of section body · local-only"]
+    JUDGE <==>|structured prompt| GATEWAY
+    JUDGE <-. re-validated on read .-> CACHE
+
+    subgraph OUTPUTS [" trim --apply outputs "]
+        CARDS["<b>Memory cards</b><br/>memory/cards/&lt;slug&gt;.md"]
+        CRUMBS["<b>Rewritten originals</b><br/>one-line breadcrumbs to cards"]
+        REVIEW["<b>Manual review</b><br/>unsure verdicts, never auto-applied"]
+    end
+
+    PLAN ==>|move| CARDS
+    CARDS ==>|cards written first| CRUMBS
+    PLAN -->|unsure| REVIEW
+
+    GUARD["<b>Safety boundary</b><br/>clean git required · atomic writes · slug traversal guard"]
+    GUARD -. gates all writes .-> OUTPUTS
+
+    classDef source fill:#eff6ff,stroke:#2563eb,color:#1e3a8a;
+    classDef process fill:#ecfdf5,stroke:#059669,color:#064e3b;
+    classDef state fill:#fff7ed,stroke:#ea580c,color:#7c2d12;
+    classDef sink fill:#f8fafc,stroke:#64748b,color:#334155;
+    classDef guard fill:#fee2e2,stroke:#ef4444,color:#7f1d1d;
+    class FILES,CONFIG,BUDGETS,GIT source;
+    class PARSE,HEUR,JUDGE,PLAN process;
+    class GATEWAY,CACHE state;
+    class CARDS,CRUMBS,REVIEW sink;
+    class GUARD guard;
+```
+
 bootstrap-doctor runs a four-stage pipeline.
 
 1. **Section parser.** Splits each tracked `.md` by H2/H3 headings into `(file, heading_path, body, char_count, last_touched_git_mtime)` tuples.
