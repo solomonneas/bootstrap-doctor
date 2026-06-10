@@ -1,8 +1,11 @@
 # Repository Guidance
 
 ## Definition of Done
-Before reporting ANY change complete, run and pass ALL of these, re-run after your final edit:
-- `python3 -m pytest` (full suite, 309 tests, under a second; no install needed, pyproject sets `pythonpath = ["src"]`)
+```
+./scripts/verify
+```
+Runs `python3 -m pytest` (the full suite, under a second; no install needed, pyproject sets `pythonpath = ["src"]`).
+Before reporting ANY change complete, run it and pass, re-run after your final edit.
 Report the actual command output. If anything fails, report the failure verbatim and do not claim success.
 Ruff and mypy are configured in pyproject but not installed in the system Python; run them only after installing the `dev` extra in a venv. Never claim a lint or type check passed without having run it. CI runs pytest, ruff, mypy, build, wheel smoke test, and pip-audit on 3.11 and 3.12; do not break configs those steps read.
 

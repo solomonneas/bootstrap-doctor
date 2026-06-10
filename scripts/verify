@@ -1,0 +1,12 @@
+#!/bin/bash
+# Single verification entrypoint. AGENTS.md's Definition of Done defers to
+# this file, so the gate lives in exactly one place.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+python3 -m pytest
+
+# Note: ruff and mypy are configured in pyproject.toml but are not installed
+# in the system Python (PEP 668 blocks pip install). Run them only after
+# installing the `dev` extra in a venv. CI also runs ruff, mypy, build,
+# wheel smoke test, and pip-audit on 3.11 and 3.12.
