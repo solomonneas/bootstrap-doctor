@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "bootstrap-doctor"
-version = "0.1.0"
+version = "0.2.0"
 description = "Audit and trim OpenClaw bootstrap files that brush the ~12k char ceiling."
 readme = "README.md"
 license = "MIT"
@@ -21,7 +21,6 @@ classifiers = [
 ]
 dependencies = [
   "requests>=2.31",
-  "brigade-cli>=0.8.0",
 ]
 
 [project.urls]
@@ -32,6 +31,13 @@ Repository = "https://github.com/escoffier-labs/bootstrap-doctor"
 bootstrap-doctor = "bootstrap_doctor.cli:main"
 
 [project.optional-dependencies]
+# brigade.budgets owns the canonical size thresholds. bootstrap-doctor ships a
+# mirrored fallback so it runs standalone; install this extra to source the
+# limits from brigade directly and stay in lockstep with the rest of the
+# escoffier-labs tooling.
+brigade = [
+  "brigade-cli>=0.8.0",
+]
 dev = [
   "build>=1.2",
   "mypy>=1.10",
@@ -63,3 +69,10 @@ check_untyped_defs = true
 no_implicit_optional = true
 warn_redundant_casts = true
 warn_unused_ignores = true
+
+# brigade is an optional dependency (the canonical source for the size budgets,
+# imported with a runtime fallback in bootstrap_doctor.budgets). Don't fail
+# typing when brigade-cli is not installed in the checkout.
+[[tool.mypy.overrides]]
+module = ["brigade.*"]
+ignore_missing_imports = true

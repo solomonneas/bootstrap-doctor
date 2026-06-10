@@ -1,14 +1,19 @@
 # Changelog
 
-## Unreleased
+## [v0.2.0] - 2026-06-10
+
+First PyPI release.
 
 ### Changed
-- Pin `brigade-cli>=0.8.0` from PyPI instead of the git ref now that brigade 0.8.0 is published; dropped the hatchling direct-reference allowance.
-- Source bootstrap size limits (soft/hard/ceiling) from `brigade.budgets` (added `brigade-cli` dependency) instead of redeclaring them locally, ending drift across the escoffier-labs tooling. Repository moved to the `escoffier-labs` org.
+- Made `brigade-cli` optional. Bootstrap size limits (soft/hard/ceiling) are still sourced from `brigade.budgets` when brigade is installed, but a new `bootstrap_doctor.budgets` module mirrors those canonical values as a fallback so the tool runs standalone without brigade-cli. Install the `brigade` extra (`pip install bootstrap-doctor[brigade]`) to source the limits from brigade directly.
+- Pin `brigade-cli>=0.8.0` from PyPI (in the optional `brigade` extra) instead of the git ref now that brigade 0.8.0 is published; dropped the hatchling direct-reference allowance. Repository moved to the `escoffier-labs` org.
 
-- Added GitHub Actions CI for tests, linting, typing, packaging, and dependency audit checks.
-- Added Ruff, mypy, build, and pip-audit dev tooling configuration.
-- Added CLI-level trim integration coverage for copied-workspace apply, idempotency, and dirty-workspace blocking.
+### Added
+- Publish-on-tag GitHub Actions workflow that builds and uploads to PyPI on `v*` tags.
+- Test coverage asserting the package imports and the mirrored fallback constants are used when brigade is absent.
+- GitHub Actions CI for tests, linting, typing, packaging, and dependency audit checks.
+- Ruff, mypy, build, and pip-audit dev tooling configuration.
+- CLI-level trim integration coverage for copied-workspace apply, idempotency, and dirty-workspace blocking.
 - Tightened config validation for malformed gateway URLs, path separators, control characters, and whitespace-padded string values.
 - Read-only verbs can resolve config when `cards_dir` does not exist yet.
 

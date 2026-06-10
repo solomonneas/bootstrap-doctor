@@ -91,7 +91,7 @@ def test_version_flag(capsys: pytest.CaptureFixture[str]) -> None:
     # argparse prints version to stdout in Python 3.4+
     out = captured.out + captured.err
     assert __version__ in out
-    assert "0.1.0" in out
+    assert f"bootstrap-doctor {__version__}" in out
 
 
 def test_no_subcommand_exits_nonzero(

@@ -24,6 +24,12 @@ bootstrap-doctor trim [--apply]      # apply the audit plan: write cards, replac
 
 ## Install
 
+From PyPI:
+
+```bash
+pipx install bootstrap-doctor
+```
+
 From a local clone:
 
 ```bash
@@ -33,6 +39,12 @@ pipx install -e .
 ```
 
 Requires Python 3.11+. Runtime dep: `requests` (used by the gateway client).
+
+The bootstrap size limits (soft / hard / ceiling) are owned by [`brigade`](https://github.com/escoffier-labs/brigade) via `brigade.budgets`. bootstrap-doctor ships a mirrored fallback so it runs standalone without brigade installed. To source the limits from brigade directly and stay in lockstep with the rest of the tooling, install the optional extra:
+
+```bash
+pipx install "bootstrap-doctor[brigade]"
+```
 
 ## Usage
 

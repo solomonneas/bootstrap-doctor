@@ -63,16 +63,15 @@ from typing import Any
 from urllib.parse import urlparse
 
 # Bootstrap size thresholds are owned by brigade.budgets (the canonical source
-# of truth shared across the escoffier-labs tooling). Imported under the local
-# names this module already exposes so downstream references stay unchanged.
-from brigade.budgets import (
-    BOOTSTRAP_HARD_LIMIT_CEILING as HARD_LIMIT_CEILING,
-)
-from brigade.budgets import (
-    DEFAULT_BOOTSTRAP_HARD_LIMIT as DEFAULT_HARD_LIMIT,
-)
-from brigade.budgets import (
-    DEFAULT_BOOTSTRAP_SOFT_LIMIT as DEFAULT_SOFT_LIMIT,
+# of truth shared across the escoffier-labs tooling). They are re-exported here
+# under the local names this module already exposes so downstream references
+# stay unchanged. The .budgets module imports them from brigade when it is
+# installed and falls back to mirrored constants when it is not, which lets
+# bootstrap-doctor run standalone without brigade-cli.
+from bootstrap_doctor.budgets import (
+    DEFAULT_HARD_LIMIT,
+    DEFAULT_SOFT_LIMIT,
+    HARD_LIMIT_CEILING,
 )
 
 # Defaults -----------------------------------------------------------------
